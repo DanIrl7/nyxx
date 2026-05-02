@@ -1,2 +1,9 @@
-*.md
+.instructions.md
 .vscode/mcp.json
+.venv
+__pycache__/ 
+*.pyc 
+.pytest_cache/
+*.egg-info/ 
+dist/
+.DS_Store

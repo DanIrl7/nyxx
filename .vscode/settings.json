@@ -1,0 +1,13 @@
+{
+    "cSpell.words": [
+        "addstr",
+        "cbreak",
+        "endwin",
+        "getch",
+        "getmaxyx",
+        "navii",
+        "nocbreak",
+        "noecho",
+        "stdscr"
+    ]
+}
