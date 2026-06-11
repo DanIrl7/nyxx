@@ -1,21 +1,20 @@
-import curses
+from src.navii.ui import UIEngine
+import time
 
-stdscr = curses.initscr()
-
-curses.noecho()
-curses.cbreak()
-stdscr.keypad(True)
-
-max_y, max_x = stdscr.getmaxyx()  # Get terminal size
-center_y = max_y // 2
-center_x = max_x // 2
-stdscr.addstr(center_y, center_x, "Welcome to NAVII")
-stdscr.refresh()
-stdscr.addstr(center_y - 2, 0, "Press any key to continue...")
-stdscr.refresh()
-stdscr.getch()
-
-curses.nocbreak()
-stdscr.keypad(False)
-curses.echo()
-curses.endwin()
+try:
+    ui = UIEngine()
+    
+    # Mock data: simulate directory listing
+    mock_items = ["Documents", "Downloads", "Desktop", "Projects", "Config"]
+    mock_path = "/Users/myname"
+    
+    # Render UI
+    ui.draw_ui(mock_path, mock_items)
+    
+    # Keep visible for 5 seconds
+    time.sleep(5)
+    
+except KeyboardInterrupt:
+    pass
+finally:
+    ui.cleanup()
