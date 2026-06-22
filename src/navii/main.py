@@ -5,6 +5,57 @@ import argparse
 from .ui import UIEngine
 from .navigator import Navigator
 from .background import BackgroundEngine
+from .pathhandler import PathHandler
+
+def parse_arguments():
+    if len(sys.argv) < 2:
+        return {"action": "ui", "state": "home"}
+
+    subcommand = sys.argv[1]
+
+    if subcommand == "cd":
+        return {"action": "ui", "state": "nav"}
+    elif subcommand == "jump":
+        if len(sys.argv) == 2:
+            return {"action": "ui", "state": "jump"}
+        elif sys.argv[2] == "add":
+            return {"action": "jump_add"}
+        else:
+            return {"action": "jump_lookup", "name": sys.argv[2]}
+            
+    elif subcommand == "memo":
+        if len(sys.argv) == 2:
+            return {"action": "ui", "state": "memo"}
+        elif sys.argv[2] == "add":
+            return {"action": "memo_add"}
+        else:
+            return {"action": "memo_lookup", "name": sys.argv[2]}
+            
+    # Default to UI home screen for unknown commands
+    return {"action": "ui", "state": "home"}
+
+def run_cli(args):
+    # Logic for CLI commands (jump/memo)
+    # No curses.wrapper here
+    print(f"Executing {args['action']}...")
+    sys.exit(0)
+
+def run_tui(args):
+    # Launch TUI
+    curses.wrapper(lambda stdscr: main(stdscr, initial_state=args["state"]))
+
+def main_entry():
+    # This is the single entry point
+    args = parse_arguments()
+    
+    if args["action"] == "ui":
+        run_tui(args)
+    else:
+        run_cli(args)
+
+if __name__ == "__main__":
+    main_entry()
+
 
 def main(stdscr):
     """
@@ -12,6 +63,7 @@ def main(stdscr):
     Manages application state ('home' vs 'nav') and coordinates 
     input between the UIEngine and the Navigator.
     """
+    PathHandler.initialize_storage()
     ui = UIEngine(stdscr)
     bg_engine = BackgroundEngine(stdscr)
     navigator = Navigator()

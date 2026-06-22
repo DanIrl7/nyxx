@@ -20,3 +20,15 @@ class PathHandler:
     @staticmethod
     def is_hidden(filename):
         return filename.startswith('.')
+
+    @staticmethod
+    def initialize_storage():
+        navi_dir = os.path.expanduser("~/.navi")
+        if not os.path.exists(navi_dir):
+            os.makedirs(navi_dir)
+
+        for filename in ["jumps.json", "memos.json"]:
+            filepath = os.path.join(navi_dir, filename)
+            if not os.path.exists(filepath):
+                with open(filepath, "w") as f:
+                    f.write("[]")
