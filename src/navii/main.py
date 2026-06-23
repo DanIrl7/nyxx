@@ -7,6 +7,10 @@ from .navigator import Navigator
 from .background import BackgroundEngine
 from .pathhandler import PathHandler
 
+# =====================================================================
+# 1. HELPER & ROUTING MODULES (Before Main)
+# =====================================================================
+
 def parse_arguments():
     if len(sys.argv) < 2:
         return {"action": "ui", "state": "home"}
@@ -63,12 +67,12 @@ def main(stdscr):
     Manages application state ('home' vs 'nav') and coordinates 
     input between the UIEngine and the Navigator.
     """
-    PathHandler.initialize_storage()
+    # PathHandler.initialize_storage()
     ui = UIEngine(stdscr)
     bg_engine = BackgroundEngine(stdscr)
     navigator = Navigator()
 
-    state = "home"
+    state = start_mode if start_mode in ("cd", "jump", "memo") else "home"
     running = True
 
     while running:
@@ -137,9 +141,15 @@ def main(stdscr):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Navii: A terminal directory navigator.')
     parser.add_argument('--project-root', type=str)
-    args, _ = parser.parse_known_args()
+    args, remaining = parser.parse_known_args()
 
     if args.project_root:
         sys.path.insert(0, os.path.join(args.project_root, 'src'))
 
-    curses.wrapper(main)
+    subcommand = remaining[0] if remaining else "cd"
+    if subcommand not in ("cd", "jump", "memo"):
+        print(f"Unknown command: {subcommand}. Use cd, jump, or memo.")
+        sys.exit(1)
+
+    # Pass the subcommand into main so it knows which mode to start in
+    curses.wrapper(lambda stdscr: main(stdscr, start_mode=subcommand))

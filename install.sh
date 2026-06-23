@@ -32,6 +32,19 @@ source "$SCRIPT_DIR/.venv/Scripts/activate" || { echo "Failed to activate venv. 
 pip install -r "$SCRIPT_DIR/requirements.txt" || { echo "Failed to install Python dependencies."; exit 1; }
 echo "Python dependencies installed."
 
+echo "Setting up Navii config directory..."
+mkdir -p "$HOME/.navi"
+
+if [ ! -f "$HOME/.navi/jumps.json" ]; then
+    echo "[]" > "$HOME/.navi/jumps.json"
+    echo "Created ~/.navi/jumps.json"
+fi
+
+if [ ! -f "$HOME/.navi/memos.json" ]; then
+    echo "[]" > "$HOME/.navi/memos.json"
+    echo "Created ~/.navi/memos.json"
+fi
+
 
 SHELL_NAME=$(basename "$SHELL")
 CONFIG_FILE=""
