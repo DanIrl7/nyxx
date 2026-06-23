@@ -74,6 +74,11 @@ def main(stdscr, initial_state="home"):  # <-- accepts initial_state now
 
         if action == "resize":
             ui.max_y, ui.max_x = stdscr.getmaxyx()
+            bg_engine.handle_resize()  # <-- add this line
+            continue
+
+        if action == "resize":
+            ui.max_y, ui.max_x = stdscr.getmaxyx()
             continue
         if action == "quit":
             running = False
