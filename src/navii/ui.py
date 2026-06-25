@@ -292,17 +292,26 @@ class UIEngine:
 
         # ── Box border ─────────────────────────────────────────
         # Top edge
-        self.stdscr.addstr(start_y, start_x,
-            "┌" + "─" * (panel_w - 2) + "┐",
-            curses.color_pair(self.CYAN))
+        try:
+            self.stdscr.addstr(start_y, start_x,
+                "┌" + "─" * (panel_w - 2) + "┐",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
         # Side edges + interior
         for r in range(1, panel_h - 1):
-            self.stdscr.addstr(start_y + r, start_x, "│", curses.color_pair(self.CYAN))
-            self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "│", curses.color_pair(self.CYAN))
+            try:
+                self.stdscr.addstr(start_y + r, start_x, "│", curses.color_pair(self.CYAN))
+                self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "│", curses.color_pair(self.CYAN))
+            except curses.error:
+                pass
         # Bottom edge
-        self.stdscr.addstr(start_y + panel_h - 1, start_x,
-            "└" + "─" * (panel_w - 2) + "┘",
-            curses.color_pair(self.CYAN))
+        try:
+            self.stdscr.addstr(start_y + panel_h - 1, start_x,
+                "└" + "─" * (panel_w - 2) + "┘",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
 
         # ── Header ─────────────────────────────────────────────
         count_str = f"{len(jumps)} saved"
@@ -311,23 +320,35 @@ class UIEngine:
         inner_w = panel_w - 2
         header = header_left.ljust(inner_w - len(count_str)) + count_str
         header = self._truncate(header, inner_w)
-        self.stdscr.addstr(start_y + 1, start_x + 1, header, curses.color_pair(self.CYAN))
+        try:
+            self.stdscr.addstr(start_y + 1, start_x + 1, header, curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
 
         # Divider below header
-        self.stdscr.addstr(start_y + 2, start_x,
-            "├" + "─" * (panel_w - 2) + "┤",
-            curses.color_pair(self.CYAN))
+        try:
+            self.stdscr.addstr(start_y + 2, start_x,
+                "├" + "─" * (panel_w - 2) + "┤",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
 
         # ── Empty state ────────────────────────────────────────
         if not jumps:
             empty = " No saved locations yet."
-            self.stdscr.addstr(start_y + 4, start_x + 1,
-                self._truncate(empty, inner_w),
-                curses.color_pair(self.WHITE))
+            try:
+                self.stdscr.addstr(start_y + 4, start_x + 1,
+                    self._truncate(empty, inner_w),
+                    curses.color_pair(self.WHITE))
+            except curses.error:
+                pass
             hint = " Use 'navi jump add' to save a location."
-            self.stdscr.addstr(start_y + 5, start_x + 1,
-                self._truncate(hint, inner_w),
-                curses.color_pair(self.YELLOW))
+            try:
+                self.stdscr.addstr(start_y + 5, start_x + 1,
+                    self._truncate(hint, inner_w),
+                    curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
 
         # ── List rows ──────────────────────────────────────────
         # Each jump takes 2 rows: name+desc line, then indented path line
@@ -358,20 +379,29 @@ class UIEngine:
             name_str = self._truncate(entry.get("name", ""), 12).ljust(12)
             desc_str = self._truncate(entry.get("desc", ""), inner_w - 16)
             line1 = f"{indicator}{name_str}  {desc_str}"
-            self.stdscr.addstr(row_y, start_x + 1,
-                self._truncate(line1, inner_w), name_col)
+            try:
+                self.stdscr.addstr(row_y, start_x + 1,
+                    self._truncate(line1, inner_w), name_col)
+            except curses.error:
+                pass
 
             # Row 2: indented path (dimmer)
             if row_y + 1 < footer_row:
                 path_str = "    " + self._truncate(entry.get("path", ""), inner_w - 4)
-                self.stdscr.addstr(row_y + 1, start_x + 1,
-                    path_str.ljust(inner_w)[:inner_w],
-                    curses.color_pair(self.YELLOW))
+                try:
+                    self.stdscr.addstr(row_y + 1, start_x + 1,
+                        path_str.ljust(inner_w)[:inner_w],
+                        curses.color_pair(self.YELLOW))
+                except curses.error:
+                    pass
 
         # ── Divider above footer ───────────────────────────────
-        self.stdscr.addstr(footer_row, start_x,
-            "├" + "─" * (panel_w - 2) + "┤",
-            curses.color_pair(self.CYAN))
+        try:
+            self.stdscr.addstr(footer_row, start_x,
+                "├" + "─" * (panel_w - 2) + "┤",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
 
         # ── Footer / confirmation ──────────────────────────────
         if confirm_delete:
@@ -379,19 +409,20 @@ class UIEngine:
             confirm_text = self._truncate(
                 f" Delete '{sel_name}'?  [y] yes   [n] no",
                 inner_w)
-            self.stdscr.addstr(footer_row + 1, start_x + 1,
-                confirm_text.ljust(inner_w)[:inner_w],
-                curses.color_pair(self.YELLOW))
+            try:
+                self.stdscr.addstr(footer_row + 1, start_x + 1,
+                    confirm_text.ljust(inner_w)[:inner_w],
+                    curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
         else:
             footer = " ↑↓ move   Enter jump   d delete   q quit"
-            self.stdscr.addstr(footer_row + 1, start_x + 1,
-                self._truncate(footer, inner_w),
-                curses.color_pair(self.YELLOW))
-
-        # ── Bottom border ──────────────────────────────────────
-        self.stdscr.addstr(start_y + panel_h - 1, start_x,
-            "└" + "─" * (panel_w - 2) + "┘",
-            curses.color_pair(self.CYAN))
+            try:
+                self.stdscr.addstr(footer_row + 1, start_x + 1,
+                    self._truncate(footer, inner_w),
+                    curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
     
     def get_logo_lines(self):
         fig = pyfiglet.figlet_format("navii", font="banner3-D")

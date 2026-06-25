@@ -82,9 +82,23 @@ if [ -n "$CONFIG_FILE" ]; then
             echo -e "\n# Navii Integration" >> ".bashrc"
             cat << EOF_NAVI_FUNCTION >> ".bashrc"
 navi() {
-  local selected_dir=\$(PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.navii.main)
-  if [ -n "\$selected_dir" ]; then
-    cd "\$selected_dir"
+  # Interactive CLI subcommands (navi jump add / navi memo add) need the
+  # terminal for input() prompts, so run them directly without capturing.
+  if [[ "\$1" == "jump" && "\$2" == "add" ]] || [[ "\$1" == "memo" && "\$2" == "add" ]]; then
+    PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.navii.main "\$@"
+    return
+  fi
+
+  # TUI + lookup commands: capture only the final output line, then act on
+  # its prefix. CD:/path -> cd ; EXEC:command -> eval ; bare path -> cd.
+  local output
+  output=\$(PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.navii.main "\$@")
+  if [[ -n "\$output" ]]; then
+    case "\$output" in
+      CD:*)   cd "\${output#CD:}" ;;
+      EXEC:*) eval "\${output#EXEC:}" ;;
+      *)      cd "\$output" ;;
+    esac
   fi
 }
 EOF_NAVI_FUNCTION

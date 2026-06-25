@@ -52,9 +52,10 @@ def main(stdscr, mode=None):
     navigator = Navigator()
 
     # Determine starting state
+    # parse_arguments() uses "nav" for cd state, "jump" for jump state
     if mode == "jump":
         state = "jump"
-    elif mode == "cd":
+    elif mode in ("nav", "cd"):
         state = "nav"
     else:
         state = "home"
@@ -90,18 +91,32 @@ def main(stdscr, mode=None):
         stdscr.refresh()
 
         # ── 3. Input ───────────────────────────────────────
+        if confirm_delete and state == "jump":
+            raw = ui.stdscr.getch()
+            if raw == ord('y') or raw == ord('Y'):
+                if jumps:
+                    delete_jump(jumps[ui.selection_index]["name"])
+                    if ui.selection_index >= len(jumps) - 1 and ui.selection_index > 0:
+                        ui.selection_index -= 1
+                confirm_delete = False
+                continue
+            elif raw in (ord('n'), ord('N'), 27):   # n or Esc cancels
+                confirm_delete = False
+                continue
+
         action = ui.get_input()
 
+        # ── Global actions (handled before state blocks) ───
         if action == "resize":
             ui.max_y, ui.max_x = stdscr.getmaxyx()
-            bg_engine.handle_resize()
             continue
 
         if action == "quit":
             running = False
+            continue
 
         # ── Home ───────────────────────────────────────────
-        elif state == "home":
+        if state == "home":
             if action in ("up", "down"):
                 ui.move_selection(action, len(items))
             elif action == "enter":
@@ -175,12 +190,9 @@ def main(stdscr, mode=None):
 # =====================================================================
 
 def run_cli(args):
-    if action == "jump":
-        sub = args[0] if args else None         
-
-        if sub == "add":
-            # Prompt inline — no curses
-            path = os.getcwd()
+    if args["action"] == "jump_add":
+        # Prompt inline — no curses
+        path = os.getcwd()
         name = input("Name for this location: ").strip()
         if not name:
             print("Cancelled.")
@@ -192,17 +204,13 @@ def run_cli(args):
         else:
             print(f"Error saving jump: {err}")
 
-    elif sub:
+    elif args["action"] == "jump_lookup":
         # navi jump <name> — no UI, just print CD: for shell wrapper
-        jump = find_jump(sub)
+        jump = find_jump(args["name"])
         if jump:
             print(f"CD:{jump['path']}")
         else:
-            print(f"navi: no jump named '{sub}'", file=sys.stderr)
-
-    else:
-        # No sub-arg — fall through to TUI
-        run_tui(curses.wrapper, mode="jump")
+            print(f"navi: no jump named '{args['name']}'", file=sys.stderr)
 
 
 def run_tui(args):
