@@ -7,6 +7,7 @@ from .background import BackgroundEngine
 from .pathhandler import PathHandler
 from .icons import get_icon
 from .jumpstore import list_jumps, find_jump, add_jump, delete_jump
+from .memostore import list_memos, find_memo, add_memo, delete_memo
 
 # =====================================================================
 # 1. ARGUMENT PARSING
@@ -55,7 +56,9 @@ def main(stdscr, mode=None):
     # parse_arguments() uses "nav" for cd state, "jump" for jump state
     if mode == "jump":
         state = "jump"
-    elif mode in ("nav", "cd"):
+    elif mode == "memo":
+        state = "memo"
+    elif mode == "cd":
         state = "nav"
     else:
         state = "home"
@@ -79,12 +82,18 @@ def main(stdscr, mode=None):
             jumps = list_jumps()   # fresh read each frame (cheap, small file)
             current_path = "jump"  # sentinel so draw_ui knows which panel to show
 
+        elif state == "memo":
+            memos = list_memos()
+            current_path = "memo"
+
         # ── 2. Render ──────────────────────────────────────
         stdscr.erase()
         bg_engine.draw()
 
         if state == "jump":
             ui.draw_jump_panel(jumps, confirm_delete=confirm_delete)
+        elif state == "memo":
+            ui.draw_memo_panel(memos, confirm_delete=confirm_delete)
         else:
             ui.draw_ui(current_path, items)
 
@@ -101,6 +110,19 @@ def main(stdscr, mode=None):
                 confirm_delete = False
                 continue
             elif raw in (ord('n'), ord('N'), 27):   # n or Esc cancels
+                confirm_delete = False
+                continue
+
+        elif confirm_delete and state == "memo":
+            raw = ui.stdscr.getch()
+            if raw in (ord('y'), ord('Y')):
+                if memos:
+                    delete_memo(memos[ui.selection_index]["name"])
+                    if ui.selection_index >= len(memos) - 1 and ui.selection_index > 0:
+                        ui.selection_index -= 1
+                confirm_delete = False
+                continue
+            elif raw in (ord('n'), ord('N'), 27):
                 confirm_delete = False
                 continue
 
@@ -128,6 +150,10 @@ def main(stdscr, mode=None):
                     state = "jump"
                     ui.selection_index = 0
                     confirm_delete = False
+                elif "memo" in selection:
+                    state = "memo"
+                    ui.selection_index = 0
+                    confirm_delete = False
 
         # ── CD nav ─────────────────────────────────────────
         elif state == "nav":
@@ -150,43 +176,44 @@ def main(stdscr, mode=None):
 
         # ── Jump ───────────────────────────────────────────
         elif state == "jump":
+            if action in ("up", "down"):
+                ui.move_selection(action, len(jumps))
+            elif action == "enter":
+                if jumps:
+                    jump = jumps[ui.selection_index]
+                    print(f"CD:{jump['path']}")
+                    running = False
+            elif action == "back":
+                state = "home"
+                ui.selection_index = 0
+                confirm_delete = False
+            elif action == "delete":
+                if jumps:
+                    confirm_delete = True
 
-            if confirm_delete:
-                # Waiting for y/n
-                raw = ui.stdscr.getch()
-                if raw == ord('y'):
-                    if jumps:
-                        delete_jump(jumps[ui.selection_index]["name"])
-                        ui.selection_index = max(0, ui.selection_index - 1)
-                    confirm_delete = False
-                elif raw in (ord('n'), 27):   # n or Esc
-                    confirm_delete = False
-
-            else:
-                if action in ("up", "down"):
-                    ui.move_selection(action, len(jumps))
-                elif action == "enter":
-                    if jumps:
-                        jump = jumps[ui.selection_index]
-                        print(f"CD:{jump['path']}")
-                        running = False
-                elif action == "back":
-                    state = "home"
-                    ui.selection_index = 0
-                    confirm_delete = False
-                elif action == "delete":
-                    if jumps:
-                        confirm_delete = True
-                # 'd' key — not mapped in map_key() yet, read raw
-                else:
-                    # We need to catch 'd' — handle it via raw key check
-                    pass
+        # ── Memo ───────────────────────────────────────────
+        elif state == "memo":
+            if action in ("up", "down"):
+                ui.move_selection(action, len(memos))
+            elif action == "enter":
+                if memos:
+                    memo = memos[ui.selection_index]
+                    print(f"EXEC:{memo['cmd']}")
+                    running = False
+            elif action == "back":
+                state = "home"
+                ui.selection_index = 0
+                confirm_delete = False
+            elif action == "delete":
+                if memos:
+                    confirm_delete = True
+        
 
     ui.cleanup()
 
 
 # =====================================================================
-# 3. ENTRY POINTS
+# 3. ENTRY POINTS 
 # =====================================================================
 
 def run_cli(args):
@@ -212,6 +239,29 @@ def run_cli(args):
         else:
             print(f"navi: no jump named '{args['name']}'", file=sys.stderr)
 
+    # --- CORRECTED MEMO LOGIC ---
+    elif args["action"] == "memo_add":
+        name = input("Name for this command: ").strip()
+        if not name:
+            print("Cancelled.")
+            return
+        desc = input("Description (optional): ").strip()
+        cmd  = input("Command: ").strip()
+        if not cmd:
+            print("Cancelled — command cannot be empty.")
+            return
+        success, err = add_memo(name, desc, cmd)
+        if success:
+            print(f"Saved '{name}' → {cmd}")
+        else:
+            print(f"Error saving memo: {err}")
+
+    elif args["action"] == "memo_lookup":
+        memo = find_memo(args["name"])
+        if memo:
+            print(f"EXEC:{memo['cmd']}")
+        else:
+            print(f"navi: no memo named '{args['name']}'", file=sys.stderr)
 
 def run_tui(args):
     curses.wrapper(lambda stdscr: main(stdscr, mode=args["state"]))

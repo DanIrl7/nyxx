@@ -277,11 +277,7 @@ class UIEngine:
 
     
     def draw_jump_panel(self, jumps, confirm_delete=False):
-        """
-        Draw the Jump module panel.
-        jumps         — list of dicts: {name, desc, path}
-        confirm_delete — if True, show y/n confirmation row instead of footer
-        """
+    
         max_y, max_x = self.stdscr.getmaxyx()
 
         # ── Panel dimensions ───────────────────────────────────
@@ -423,7 +419,143 @@ class UIEngine:
                     curses.color_pair(self.YELLOW))
             except curses.error:
                 pass
-    
+
+    def draw_memo_panel(self, memos, confirm_delete=False):
+        max_y, max_x = self.stdscr.getmaxyx()
+
+        # ── Panel dimensions ───────────────────────────────────
+        panel_w = min(60, max_x - 4)
+        panel_h = min(18, max_y - 4)
+        start_y = (max_y - panel_h) // 2
+        start_x = (max_x - panel_w) // 2
+
+        # ── Box border ─────────────────────────────────────────
+        try:
+            self.stdscr.addstr(start_y, start_x,
+                "┌" + "─" * (panel_w - 2) + "┐",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+        for r in range(1, panel_h - 1):
+            try:
+                self.stdscr.addstr(start_y + r, start_x, "│", curses.color_pair(self.CYAN))
+                self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "│", curses.color_pair(self.CYAN))
+            except curses.error:
+                pass
+        try:
+            self.stdscr.addstr(start_y + panel_h - 1, start_x,
+                "└" + "─" * (panel_w - 2) + "┘",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        # ── Header ─────────────────────────────────────────────
+        inner_w = panel_w - 2
+        count_str = f"{len(memos)} saved"
+        header_left = " 📝 saved commands"
+        header = header_left.ljust(inner_w - len(count_str)) + count_str
+        header = self._truncate(header, inner_w)
+        try:
+            self.stdscr.addstr(start_y + 1, start_x + 1, header, curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        # Divider below header
+        try:
+            self.stdscr.addstr(start_y + 2, start_x,
+                "├" + "─" * (panel_w - 2) + "┤",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        # ── Empty state ────────────────────────────────────────
+        if not memos:
+            try:
+                self.stdscr.addstr(start_y + 4, start_x + 1,
+                    self._truncate(" No saved commands yet.", inner_w),
+                    curses.color_pair(self.WHITE))
+                self.stdscr.addstr(start_y + 5, start_x + 1,
+                    self._truncate(" Use 'navi memo add' to save a command.", inner_w),
+                    curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
+
+        # ── List rows ──────────────────────────────────────────
+        list_start_row   = start_y + 3
+        footer_row       = start_y + panel_h - 3
+        available_rows   = footer_row - list_start_row
+        rows_per_entry   = 2
+        viewport_entries = max(1, available_rows // rows_per_entry)
+
+        scroll = max(0, self.selection_index - (viewport_entries - 1))
+        scroll = min(scroll, max(0, len(memos) - viewport_entries))
+
+        for slot, mi in enumerate(range(scroll, min(scroll + viewport_entries, len(memos)))):
+            entry = memos[mi]
+            selected = (mi == self.selection_index)
+            row_y = list_start_row + slot * rows_per_entry
+
+            if row_y >= footer_row:
+                break
+
+            indicator = "▸ " if selected else "  "
+            name_col  = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.WHITE)
+
+            name_str = self._truncate(entry.get("name", ""), 12).ljust(12)
+            desc_str = self._truncate(entry.get("desc", ""), inner_w - 16)
+            line1 = f"{indicator}{name_str}  {desc_str}"
+            try:
+                self.stdscr.addstr(row_y, start_x + 1,
+                    self._truncate(line1, inner_w), name_col)
+            except curses.error:
+                pass
+
+            if row_y + 1 < footer_row:
+                cmd_str = "    $ " + self._truncate(entry.get("cmd", ""), inner_w - 6)
+                try:
+                    self.stdscr.addstr(row_y + 1, start_x + 1,
+                        cmd_str.ljust(inner_w)[:inner_w],
+                        curses.color_pair(self.YELLOW))
+                except curses.error:
+                    pass
+
+        # ── Divider above footer ───────────────────────────────
+        try:
+            self.stdscr.addstr(footer_row, start_x,
+                "├" + "─" * (panel_w - 2) + "┤",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        # ── Footer / confirmation ──────────────────────────────
+        if confirm_delete:
+            sel_name = memos[self.selection_index]["name"] if memos else ""
+            confirm_text = self._truncate(
+                f" Delete '{sel_name}'?  [y] yes   [n] no",
+                inner_w)
+            try:
+                self.stdscr.addstr(footer_row + 1, start_x + 1,
+                    confirm_text.ljust(inner_w)[:inner_w],
+                    curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
+        else:
+            footer = " ↑↓ move   Enter run   d delete   q quit"
+            try:
+                self.stdscr.addstr(footer_row + 1, start_x + 1,
+                    self._truncate(footer, inner_w),
+                    curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
+
+        # ── Bottom border ──────────────────────────────────────
+        try:
+            self.stdscr.addstr(start_y + panel_h - 1, start_x,
+                "└" + "─" * (panel_w - 2) + "┘",
+                curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
     def get_logo_lines(self):
         fig = pyfiglet.figlet_format("navii", font="banner3-D")
         return fig.splitlines()
