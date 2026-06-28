@@ -76,11 +76,12 @@ esac
 
 if [ -n "$CONFIG_FILE" ]; then
     echo "Adding Navii function to $CONFIG_FILE..."
+    CONFIG_BASENAME="$(basename "$CONFIG_FILE")"
     (
         cd "$HOME" || { echo "Error: Could not change to HOME directory for Bash/Zsh config."; exit 1; }
-        if ! grep -qF "navi() {" ".bashrc"; then
-            echo -e "\n# Navii Integration" >> ".bashrc"
-            cat << EOF_NAVI_FUNCTION >> ".bashrc"
+        if ! grep -qF "navi() {" "$CONFIG_BASENAME" 2>/dev/null; then
+            echo -e "\n# Navii Integration" >> "$CONFIG_BASENAME"
+            cat << EOF_NAVI_FUNCTION >> "$CONFIG_BASENAME"
 navi() {
   # Interactive CLI subcommands (navi jump add / navi memo add) need the
   # terminal for input() prompts, so run them directly without capturing.
@@ -92,7 +93,7 @@ navi() {
   # TUI + lookup commands: capture only the final output line, then act on
   # its prefix. CD:/path -> cd ; EXEC:command -> eval ; bare path -> cd.
   local output
-  output=\$(PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.navii.main "\$@")
+  output=\$(PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.navii.main "\$@" 2>/dev/null)
   if [[ -n "\$output" ]]; then
     case "\$output" in
       CD:*)   cd "\${output#CD:}" ;;

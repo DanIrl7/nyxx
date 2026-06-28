@@ -23,13 +23,19 @@ function navi {
     $output = & $pythonExecutable -m src.navii.main @args
     $env:PYTHONPATH = $oldPath
 
-    if ($output) {
-        if ($output -match '^CD:(.*)$') {
-            Set-Location $Matches[1]
-        } elseif ($output -match '^EXEC:(.*)$') {
-            Invoke-Expression $Matches[1]
-        } else {
-            Set-Location $output
-        }
+    if (-not $output) { return }
+
+    if ($output -like "CD:*") {
+        $target = $output.Substring(3)
+        Set-Location $target
+        return
     }
+
+    if ($output -like "EXEC:*") {
+        $cmd = $output.Substring(5)
+        Invoke-Expression $cmd
+        return
+    }
+
+    Write-Host "navi: unexpected output: $output"
 }

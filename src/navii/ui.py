@@ -39,7 +39,50 @@ class UIEngine:
         curses.init_pair(10, curses.COLOR_YELLOW, curses.COLOR_BLACK) # Warm window light
         curses.init_pair(11, curses.COLOR_WHITE, curses.COLOR_BLACK)  # Bright white office light
         curses.init_pair(12, curses.COLOR_BLACK, curses.COLOR_BLACK) # Block character in menu 
+        # ── Vaporwave theme pairs ──────────────────────────────────────
+        curses.init_pair(13, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # bright magenta stars
+        curses.init_pair(14, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # mid cyan stars
+        curses.init_pair(15, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # dim blue stars
+        curses.init_pair(16, curses.COLOR_MAGENTA, curses.COLOR_MAGENTA) # city silhouette
+        curses.init_pair(17, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # pink glow
 
+        # ── Matrix theme pairs ─────────────────────────────────────────
+        curses.init_pair(18, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # bright green stars
+        curses.init_pair(19, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # mid green stars (A_DIM applied at draw time)
+        curses.init_pair(20, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # dim green stars (A_DIM)
+        curses.init_pair(21, curses.COLOR_BLACK,   curses.COLOR_BLACK)  # city silhouette
+        curses.init_pair(22, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # green glow
+        # ── Sunset sky ────────────────────────────────────────────────
+        curses.init_pair(23, curses.COLOR_RED,     curses.COLOR_BLACK)  # bright orange/red
+        curses.init_pair(24, curses.COLOR_YELLOW,  curses.COLOR_BLACK)  # mid yellow
+        curses.init_pair(25, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # dim purple
+        curses.init_pair(26, curses.COLOR_RED,     curses.COLOR_BLACK)  # glow
+
+        # ── Rainy day sky ─────────────────────────────────────────────
+        curses.init_pair(27, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # bright rain
+        curses.init_pair(28, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # mid rain
+        curses.init_pair(29, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # dim rain
+        curses.init_pair(30, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # glow
+
+        # ── Beach ground ──────────────────────────────────────────────
+        curses.init_pair(31, curses.COLOR_YELLOW,  curses.COLOR_BLACK)  # sand
+        curses.init_pair(32, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # ocean
+        curses.init_pair(33, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # foam
+
+        # ── Forest ground ─────────────────────────────────────────────
+        curses.init_pair(34, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # dark trees
+        curses.init_pair(35, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # mid green (A_DIM at draw time)
+        curses.init_pair(36, curses.COLOR_YELLOW,  curses.COLOR_BLACK)  # canopy highlight
+
+        # ── Ranch ground ──────────────────────────────────────────────
+        curses.init_pair(37, curses.COLOR_YELLOW,  curses.COLOR_BLACK)  # tan ground
+        curses.init_pair(38, curses.COLOR_RED,     curses.COLOR_BLACK)  # barn/fence
+        curses.init_pair(39, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # grass
+
+        # ── Ocean ground ──────────────────────────────────────────────
+        curses.init_pair(40, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # deep water
+        curses.init_pair(41, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # mid water
+        curses.init_pair(42, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # foam/highlight
         self.error_message = None
 
     def cleanup(self):
@@ -78,6 +121,8 @@ class UIEngine:
             return "resize"
         elif key == ord('d'):
             return "delete"
+        elif key == ord('\t'):
+            return "tab"
         else:
             return None  # Unknown key
         
@@ -641,6 +686,122 @@ class UIEngine:
 
         return start_y, start_x, box_width
 
+    def draw_theme_panel(self, sky_themes, ground_themes, active_sky, active_ground,
+                     sky_enabled, ground_enabled, mode="sky"):
+       
+        max_y, max_x = self.stdscr.getmaxyx()
+        panel_w = min(54, max_x - 4)
+        panel_h = min(16, max_y - 4)
+        start_y = (max_y - panel_h) // 2
+        start_x = (max_x - panel_w) // 2
+        inner_w = panel_w - 2
+
+        # ── Box ───────────────────────────────────────────────────
+        try:
+            self.stdscr.addstr(start_y, start_x,
+                "┌" + "─" * (panel_w - 2) + "┐", curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+        for r in range(1, panel_h - 1):
+            try:
+                self.stdscr.addstr(start_y + r, start_x,     "│", curses.color_pair(self.CYAN))
+                self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "│", curses.color_pair(self.CYAN))
+            except curses.error:
+                pass
+        try:
+            self.stdscr.addstr(start_y + panel_h - 1, start_x,
+                "└" + "─" * (panel_w - 2) + "┘", curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        # ── Tab bar ───────────────────────────────────────────────
+        tabs = [("sky", " 🌙 Sky "), ("ground", " 🏙  Ground "), ("toggles", " ⚙  Toggles ")]
+        tab_x = start_x + 2
+        for key, label in tabs:
+            attr = (curses.color_pair(self.SELECTION) if mode == key
+                    else curses.color_pair(self.CYAN))
+            try:
+                self.stdscr.addstr(start_y + 1, tab_x, label, attr)
+            except curses.error:
+                pass
+            tab_x += len(label) + 1
+
+        # Divider under tabs
+        try:
+            self.stdscr.addstr(start_y + 2, start_x,
+                "├" + "─" * (panel_w - 2) + "┤", curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        list_start  = start_y + 3
+        footer_row  = start_y + panel_h - 3
+
+        # ── Sky theme list ────────────────────────────────────────
+        if mode == "sky":
+            for i, name in enumerate(sky_themes):
+                row_y = list_start + i
+                if row_y >= footer_row:
+                    break
+                selected = (i == self.selection_index)
+                active   = (name == active_sky)
+                marker   = " ✓" if active else "  "
+                indicator = "▸ " if selected else "  "
+                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
+                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.WHITE)
+                try:
+                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
+                except curses.error:
+                    pass
+
+        # ── Ground theme list ─────────────────────────────────────
+        elif mode == "ground":
+            for i, name in enumerate(ground_themes):
+                row_y = list_start + i
+                if row_y >= footer_row:
+                    break
+                selected = (i == self.selection_index)
+                active   = (name == active_ground)
+                marker   = " ✓" if active else "  "
+                indicator = "▸ " if selected else "  "
+                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
+                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.WHITE)
+                try:
+                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
+                except curses.error:
+                    pass
+
+        # ── Toggles ───────────────────────────────────────────────
+        elif mode == "toggles":
+            toggles = [
+                ("Sky layer",    sky_enabled),
+                ("Ground layer", ground_enabled),
+            ]
+            for i, (label, enabled) in enumerate(toggles):
+                row_y = list_start + i
+                selected  = (i == self.selection_index)
+                indicator = "▸ " if selected else "  "
+                status    = "[ON] " if enabled else "[OFF]"
+                line = self._truncate(f"{indicator}{label:<16}  {status}", inner_w)
+                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.WHITE)
+                try:
+                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
+                except curses.error:
+                    pass
+
+        # ── Divider + footer ──────────────────────────────────────
+        try:
+            self.stdscr.addstr(footer_row, start_x,
+                "├" + "─" * (panel_w - 2) + "┤", curses.color_pair(self.CYAN))
+        except curses.error:
+            pass
+
+        footer = " Tab switch tab   ↑↓ move   Enter select   ← back"
+        try:
+            self.stdscr.addstr(footer_row + 1, start_x + 1,
+                self._truncate(footer, inner_w), curses.color_pair(self.YELLOW))
+        except curses.error:
+            pass
+
     def draw_home(self, items):
         """Draw the full home screen — logo + menu panel"""
 
@@ -693,25 +854,24 @@ class UIEngine:
             pass
 
     def draw_ui(self, current_path, items):
-
         if current_path == "Navii Home":
-            self.draw_home(items)  # <-- use the new home screen draw
-            return                 # <-- skip the rest
+            self.draw_home(items)
+            return
 
-        # Draw header: Current Path
+        # draw_ui is now only called for the home state.
+        # nav/jump/memo are drawn directly from main.py.
+        # This fallback is kept for safety but shouldn't be reached.
         self.stdscr.addstr(0, 0, current_path, curses.color_pair(self.CYAN))
-
-        # LIST ITEMS
         self.draw_list(items, start_row=1)
-
-        # Footer: Keybindings
-        footer_text = "↑↓/[k][j]: Navigate | Enter[l]: Open | ⌫ Backspace: Go Back | q: Quit"
+        footer_text = "↑↓ Navigate  Enter Open  ← Back  q Quit"
         try:
             self.stdscr.addstr(self.max_y - 1, 0, footer_text, curses.color_pair(self.YELLOW))
         except curses.error:
             pass
-
         if self.error_message:
-            self.stdscr.addstr(self.max_y - 2, 0, f"Error: {self.error_message}", curses.color_pair(self.YELLOW))
-
+            try:
+                self.stdscr.addstr(self.max_y - 2, 0,
+                    f"Error: {self.error_message}", curses.color_pair(self.YELLOW))
+            except curses.error:
+                pass
 
