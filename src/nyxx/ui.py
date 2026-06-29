@@ -259,7 +259,7 @@ class UIEngine:
                 except curses.error:
                     pass
                 try:
-                    self.stdscr.addstr(row_y, icon_col,  " ",           attr)
+                    self.stdscr.addstr(row_y, icon_col,  icon,          attr)
                     self.stdscr.addstr(row_y, arrow_col, "▸",           attr)
                     self.stdscr.addstr(row_y, name_col,  display_name,  attr)
                 except curses.error:
@@ -267,7 +267,7 @@ class UIEngine:
             else:
                 attr = curses.color_pair(self.WHITE)
                 try:
-                    self.stdscr.addstr(row_y, icon_col,  " ",           attr)
+                    self.stdscr.addstr(row_y, icon_col,  icon,          attr)
                     self.stdscr.addstr(row_y, arrow_col, " ",           attr)
                     self.stdscr.addstr(row_y, name_col,  display_name,  attr)
                 except curses.error:
