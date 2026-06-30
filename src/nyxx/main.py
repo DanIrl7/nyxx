@@ -23,7 +23,8 @@ def main(stdscr, initial_state="home"):
         sky_enabled=sky_enabled,
         ground_enabled=ground_enabled,
     )
-    navigator = Navigator()
+    start_path = os.environ.get("NYXX_CWD") or os.getcwd()
+    navigator = Navigator(start_path=start_path)
 
     state = initial_state
     theme_mode = "sky"

@@ -4,7 +4,7 @@ import os
 
 class Navigator:
     def __init__(self, start_path=None):
-        self.current_path = os.path.expanduser("~") if start_path is None else start_path
+        self.current_path = os.getcwd() if start_path is None else start_path
         self.history = [self.current_path]
         self.show_hidden = False          # toggled by '.' key
 

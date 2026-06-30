@@ -24,8 +24,6 @@ if [ ! -d "$SCRIPT_DIR/.venv" ]; then
 fi
 
 # ── Resolve venv paths (Windows vs Unix) ──────────────────────────────────
-# This is the fix for the critical bug — activation path is now chosen
-# based on what actually exists, not assumed.
 if [ -f "$SCRIPT_DIR/.venv/Scripts/activate" ]; then
     # Windows (Git Bash / MSYS2)
     ACTIVATE="$SCRIPT_DIR/.venv/Scripts/activate"
@@ -90,17 +88,81 @@ case "$SHELL_NAME" in
     pwsh|powershell)
         echo ""
         echo "PowerShell detected."
-        echo "Please manually add the following line to your \$PROFILE file:"
-        echo "  (open it with: notepad \$PROFILE)"
-        echo ""
-        if command -v cygpath &> /dev/null; then
-            PS1_PATH="$(cygpath -w "$SCRIPT_DIR/shell_integrations/nyxx.ps1")"
-        else
-            PS1_PATH="$SCRIPT_DIR/shell_integrations/nyxx.ps1"
+
+        # Resolve the PowerShell profile path
+        PS_PROFILE=$(powershell -NoProfile -Command 'echo $PROFILE' 2>/dev/null)
+
+        if [ -z "$PS_PROFILE" ]; then
+            echo "Could not detect PowerShell profile path."
+            echo "Please manually add the nyxx() function to your \$PROFILE."
+            exit 1
         fi
-        echo "  . '$PS1_PATH'"
+
+        # Convert project root and python bin to Windows paths
+        WIN_SCRIPT_DIR=$(cygpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR")
+        WIN_PYTHON_BIN=$(cygpath -w "$PYTHON_BIN" 2>/dev/null || echo "$PYTHON_BIN")
+
+        if grep -qF "function nyxx" "$PS_PROFILE" 2>/dev/null; then
+            echo "✓ Nyxx wrapper already exists in PowerShell profile — skipping."
+        else
+            mkdir -p "$(dirname "$PS_PROFILE")"
+            cat >> "$PS_PROFILE" << EOF_PS
+
+# Nyxx Integration
+function nyxx {
+    \$projectRoot      = "$WIN_SCRIPT_DIR"
+    \$pythonExecutable = "$WIN_PYTHON_BIN"
+
+    if (-not (Test-Path \$pythonExecutable)) {
+        Write-Host "nyxx: python not found at \$pythonExecutable"
+        return
+    }
+
+    \$oldPath        = \$env:PYTHONPATH
+    \$oldCwd         = \$env:NYXX_CWD
+    \$env:PYTHONPATH = \$projectRoot
+    \$env:NYXX_CWD   = (Get-Location).Path
+
+    if ((\$args[0] -eq 'jump' -and \$args[1] -eq 'add') -or
+        (\$args[0] -eq 'memo' -and \$args[1] -eq 'add')) {
+        & \$pythonExecutable -m src.nyxx.main @args
+        \$env:PYTHONPATH = \$oldPath
+        \$env:NYXX_CWD   = \$oldCwd
+        return
+    }
+
+    \$output = & \$pythonExecutable -m src.nyxx.main @args 2>\$null
+    \$env:PYTHONPATH = \$oldPath
+    \$env:NYXX_CWD   = \$oldCwd
+
+    if (-not \$output) { return }
+
+    if (\$output -like "CD:*") {
+        Set-Location \$output.Substring(3)
+        return
+    }
+
+    if (\$output -like "EXEC:*") {
+        Invoke-Expression \$output.Substring(5)
+        return
+    }
+
+    Write-Host "nyxx: unexpected output: \$output"
+}
+EOF_PS
+            echo "✓ Nyxx function added to PowerShell profile."
+        fi
+
         echo ""
-        echo "Then restart PowerShell or run: . \$PROFILE"
+        echo "  To activate in your current PowerShell session, run:"
+        echo "    . \$PROFILE"
+        echo ""
+        echo "  Then try:"
+        echo "    nyxx          — open home screen"
+        echo "    nyxx cd       — open directory navigator"
+        echo "    nyxx jump     — open saved locations"
+        echo "    nyxx memo     — open saved commands"
+        echo "    nyxx theme    — change theme"
         exit 0
         ;;
     *)
@@ -112,26 +174,27 @@ case "$SHELL_NAME" in
         ;;
 esac
 
-# ── Inject wrapper function ────────────────────────────────────────────────
+# ── Inject bash/zsh wrapper function ──────────────────────────────────────
 if grep -qF "nyxx() {" "$CONFIG_FILE" 2>/dev/null; then
     echo "✓ Nyxx wrapper already exists in $CONFIG_FILE — skipping."
 else
     echo "Adding Nyxx function to $CONFIG_FILE..."
-    cat >> "$CONFIG_FILE" << EOF_NAVI_FUNCTION
+    cat >> "$CONFIG_FILE" << EOF_NYXX_FUNCTION
 
 # Nyxx Integration
 nyxx() {
   # nyxx jump add / nyxx memo add need a live terminal for prompts —
   # run directly without output capture.
   if [[ "\$1" == "jump" && "\$2" == "add" ]] || [[ "\$1" == "memo" && "\$2" == "add" ]]; then
-    PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@"
+    NYXX_CWD="\$(pwd)" PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@"
     return
   fi
 
   # All other commands: capture the single output line and act on its prefix.
   # Curses draws to /dev/tty directly so it never pollutes this capture.
+  # NYXX_CWD tells Python which directory the user is currently in.
   local output
-  output=\$(PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@" 2>/dev/null)
+  output=\$(NYXX_CWD="\$(pwd)" PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@" 2>/dev/null)
   if [[ -n "\$output" ]]; then
     case "\$output" in
       CD:*)   cd "\${output#CD:}" ;;
@@ -140,7 +203,7 @@ nyxx() {
     esac
   fi
 }
-EOF_NAVI_FUNCTION
+EOF_NYXX_FUNCTION
     echo "✓ Nyxx function added to $CONFIG_FILE."
 fi
 
