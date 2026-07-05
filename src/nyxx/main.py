@@ -14,26 +14,35 @@ from .background import (
 from .jumpstore import list_jumps, delete_jump, add_jump
 from .memostore import list_memos, delete_memo, add_memo
 from .config import get as config_get, set as config_set
+import subprocess
 
 
 def _pick_image_file(initial_path=""):
-    """Open a native file picker for choosing a background image."""
-    from tkinter import Tk, filedialog
-
+    """Use PowerShell to trigger the native Windows file picker."""
     initial_dir = os.path.dirname(initial_path) if initial_path else os.path.expanduser("~")
-    root = Tk()
-    root.withdraw()
+    
+    # This PowerShell command creates a native OpenFileDialog
+    ps_command = f"""
+    Add-Type -AssemblyName System.Windows.Forms
+    $fd = New-Object System.Windows.Forms.OpenFileDialog
+    $fd.InitialDirectory = '{initial_dir}'
+    $fd.Filter = 'Image Files|*.png;*.jpg;*.jpeg;*.webp;*.bmp|All Files|*.*'
+    $fd.ShowDialog() | Out-Null
+    $fd.FileName
+    """
+    
     try:
-        return filedialog.askopenfilename(
-            title="Choose a background image",
-            initialdir=initial_dir,
-            filetypes=[
-                ("Image files", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff"),
-                ("All files", "*.*"),
-            ],
+        # Run the powershell command
+        result = subprocess.run(
+            ["powershell", "-Command", ps_command],
+            capture_output=True,
+            text=True
         )
-    finally:
-        root.destroy()
+        # The result is the path printed by PowerShell
+        path = result.stdout.strip()
+        return path if path else None
+    except Exception:
+        return None
 
 
 def main(stdscr, initial_state="home"):
