@@ -7,8 +7,11 @@ DEFAULTS = {
     "theme":          "starry night",   # kept for backward compat
     "sky_theme":      "starry night",
     "ground_theme":   "city",
+    "scene_theme":    "vaporwave sunset",
+    "user_image_path": "",
     "sky_enabled":    True,
     "ground_enabled": True,
+    "bg_mode":        "layered",
 }
 
 def load_config():

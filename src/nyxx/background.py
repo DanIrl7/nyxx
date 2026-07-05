@@ -1,16 +1,126 @@
 import curses
 import random
+import math
+import numpy as np
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SKY THEME REGISTRY
-# Each entry defines everything the sky renderer needs.
-# color_pairs: [bright, mid, dim] — referenced by index into UIEngine's pairs
-# particle_chars / ascii_chars: what gets scattered across the sky
-# particle_weights: probability weights matching particle_chars order
-# glow_pair: color pair for the horizon glow line
-# glow_char: character used for the glow row
-# density: fraction of sky cells that get a particle
+# CHARACTER DICTIONARIES
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Quad-pixel dict: key = 4-bit integer (TL=bit3, TR=bit2, BL=bit1, BR=bit0)
+# Each terminal cell = 2×2 virtual pixels. The glyph encodes which sub-pixels
+# are "foreground" (on) vs "background" (off).
+QUAD_PIXEL_DICT = {
+    0:  " ",  1:  "▗",  2:  "▖",  3:  "▄",
+    4:  "▝",  5:  "▐",  6:  "▞",  7:  "▟",
+    8:  "▘",  9:  "▚",  10: "▌",  11: "▙",
+    12: "▀",  13: "▜",  14: "▛",  15: "█",
+}
+
+# Shading dict: for full-cell gradient fills (sky, sun, water).
+# Index 0–4 maps brightness 0.0–1.0 to increasing density.
+SHADE_DICT = [" ", "░", "▒", "▓", "█"]
+
+# Vertical smooth dict: for wave heightmaps if you add them later.
+VERTICAL_SMOOTH_DICT = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COLOR PALETTE
+#
+# Pair IDs 1–58 are used by UIEngine (ui.py). Scene renderer uses 59–255.
+#
+# PALETTE_8 is the fallback for 8-color terminals — each entry is a standard
+# curses color constant approximating the target hue.
+#
+# PALETTE_256 is used on 256-color terminals that support can_change_color().
+# Each entry is (r, g, b) in curses units (0–1000).
+# The pair id for palette index i is BASE_PAIR + i.
+# ══════════════════════════════════════════════════════════════════════════════
+
+BASE_PAIR = 59  # first curses pair id owned by the scene renderer
+
+# Vaporwave sunset palette — 24 colors, ordered dark→bright within each zone.
+# Zones: [0–5] deep sky, [6–11] sun glow / horizon, [12–17] sun disc,
+#         [18–20] water, [21–23] palm silhouette
+VAPORWAVE_PALETTE_256 = [
+    # 0-5: Deep Sky (Black/Navy fading to bright Teal/Cyan)
+    (10,   10,   30),    # 0 Void black/navy
+    (20,   40,   100),   # 1 Deep space blue
+    (30,   150,  250),   # 2 Dark teal
+    (40,   300,  400),   # 3 Mid teal
+    (50,   450,  550),   # 4 Bright teal
+    (100,  600,  700),   # 5 Cyan horizon glow
+
+    # 6-11: Horizon / Sky Transition (Pink to Magenta)
+    (500,  100,  400),   # 6 Deep purple
+    (700,  150,  500),   # 7 Magenta
+    (900,  200,  600),   # 8 Bright magenta
+    (1000, 300,  650),   # 9 Hot pink
+    (1000, 450,  700),   # 10 Light neon pink
+    (1000, 600,  800),   # 11 Pale pink highlight
+
+    # 12-17: Sun (Pink bottom fading to Pale Yellow top)
+    (1000, 200,  500),   # 12 Deep pink (sun bottom)
+    (1000, 400,  500),   # 13 Orange-pink
+    (1000, 600,  400),   # 14 Golden orange
+    (1000, 800,  300),   # 15 Bright yellow
+    (1000, 900,  500),   # 16 Pale yellow
+    (1000, 950,  800),   # 17 Near-white (sun top)
+
+    # 18-20: Water & Reflections
+    (20,   100,  250),   # 18 Deep water (dark teal base)
+    (1000, 300,  600),   # 19 Pink water reflection (wide)
+    (1000, 800,  400),   # 20 Yellow water reflection (core)
+
+    # 21-23: Palm Silhouette (Black with subtle magenta/teal rim light)
+    (10,   10,   20),    # 21 Core silhouette black
+    (700,  150,  500),   # 22 Magenta rim light (fronds)
+    (30,   150,  250),   # 23 Teal rim light (trunk)
+]
+
+# 8-color fallback: same 24 slots, each mapped to nearest standard color.
+VAPORWAVE_PALETTE_8 = [
+    # deep sky
+    curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
+    curses.COLOR_CYAN, curses.COLOR_CYAN, curses.COLOR_CYAN,
+    # sun glow / horizon
+    curses.COLOR_MAGENTA, curses.COLOR_MAGENTA, curses.COLOR_MAGENTA,
+    curses.COLOR_MAGENTA, curses.COLOR_RED,     curses.COLOR_RED,
+    # sun disc
+    curses.COLOR_YELLOW, curses.COLOR_YELLOW, curses.COLOR_YELLOW,
+    curses.COLOR_WHITE,  curses.COLOR_WHITE,  curses.COLOR_WHITE,
+    # water
+    curses.COLOR_BLUE, curses.COLOR_CYAN, curses.COLOR_MAGENTA,
+    # palm
+    curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
+]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCENE REGISTRY
+# A "scene" is a full-screen unified background — no sky/ground split.
+# build_fn: which _build_*() method to call to populate the framebuffer.
+# palette_256: list of (r,g,b) entries (0–1000 scale) for 256-color mode.
+# palette_8:   list of standard curses COLOR_* constants for 8-color fallback.
+# ══════════════════════════════════════════════════════════════════════════════
+SCENE_THEMES = {
+    "vaporwave sunset": {
+        "label":       "Vaporwave Sunset",
+        "build_fn":    "vaporwave_sunset",
+        "palette_256": VAPORWAVE_PALETTE_256,
+        "palette_8":   VAPORWAVE_PALETTE_8,
+    },
+    "user image": {
+        "label":       "Custom Image",
+        "build_fn":    "user_image",
+        "palette_256": [],
+        "palette_8":   [],
+    },
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAYERED THEME REGISTRIES (sky + ground — unchanged from before)
 # ══════════════════════════════════════════════════════════════════════════════
 SKY_THEMES = {
     "starry night": {
@@ -65,31 +175,12 @@ SKY_THEMES = {
     },
 }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# GROUND THEME REGISTRY
-# Each entry defines everything the ground renderer needs.
-# color_pair: main ground/structure color
-# accent_pair: secondary color (windows, leaves, waves, etc.)
-# highlight_pair: brightest accent (lit windows, foam, flowers, etc.)
-# layers: list of row descriptors drawn bottom-up.
-#   Each layer is a dict:
-#     "h": int        — how many terminal rows tall this layer is
-#     "chars": str    — characters tiled across the row (cycled left-to-right)
-#     "color": str    — "main", "accent", or "highlight"
-#     "bold": bool    — whether to apply A_BOLD
-#     "dim": bool     — whether to apply A_DIM
-# detail_fn: string key — which detail-drawing function to call on top
-#   (None, "city_windows", "forest_canopy", "ocean_waves", "beach_surf",
-#    "ranch_fence")
-# tallest: int — used to position the glow row above the ground
-# ══════════════════════════════════════════════════════════════════════════════
 GROUND_THEMES = {
     "city": {
         "label":          "City Skyscrapers",
         "color_pair":     8,
-        "accent_pair":    3,    # yellow windows
-        "highlight_pair": 11,   # white office light
+        "accent_pair":    3,
+        "highlight_pair": 11,
         "detail_fn":      "city_windows",
         "tallest":        25,
         "buildings": [
@@ -110,37 +201,19 @@ GROUND_THEMES = {
             {"w": 8,  "h": 15, "win": "▓"},
         ],
     },
-
-    # ────────────────────────────────────────────────────────────────────
-    # BEACH — reworked. Instead of flat repeating-character bands, the
-    # beach now has a textured (non-tiled) sand bed, a proper foam/surf
-    # transition, and scattered props: two palm trees, a beach umbrella
-    # + towel, a crab, and a few shells. Gulls are drawn in the sky pass
-    # so they sit correctly above the horizon glow.
-    #
-    # Reference style notes (adapted, not copied, from classic beach/palm
-    # ASCII art such as the pieces archived at asciiart.eu / Joan Stark's
-    # collection): palm trees as a leaning trunk of slashes topped with a
-    # simple frond crown, and a crab as a compact claw-body-claw glyph —
-    # kept intentionally small and original rather than reproducing any
-    # specific existing piece.
-    # ────────────────────────────────────────────────────────────────────
     "beach": {
         "label":          "Beach",
-        "color_pair":     31,   # sand
-        "accent_pair":    32,   # ocean
-        "highlight_pair": 33,   # foam / white
+        "color_pair":     31,
+        "accent_pair":    32,
+        "highlight_pair": 33,
         "detail_fn":      "beach_surf",
         "tallest":        9,
-        # Fallback flat layers — used by the generic _draw_layers() path
-        # only if the terminal is too small to safely place props.
         "layers": [
-            {"h": 2, "chars": "▒░▒▒░▒░▒▒░",          "color": "main",      "bold": True,  "dim": False},  # sand
-            {"h": 1, "chars": "≈ ~ ≈ ~ ≈ ~ ≈ ~ ≈ ~", "color": "highlight", "bold": True,  "dim": False},  # foam
-            {"h": 2, "chars": "≋≈≋≈≋≈≋≈≋≈",           "color": "accent",    "bold": False, "dim": False},  # surf
-            {"h": 2, "chars": "~ ≈ ~ ≈ ~ ≈ ~ ≈ ~ ≈", "color": "accent",    "bold": False, "dim": True },  # open water
+            {"h": 2, "chars": "▒░▒▒░▒░▒▒░",          "color": "main",      "bold": True,  "dim": False},
+            {"h": 1, "chars": "≈ ~ ≈ ~ ≈ ~ ≈ ~ ≈ ~", "color": "highlight", "bold": True,  "dim": False},
+            {"h": 2, "chars": "≋≈≋≈≋≈≋≈≋≈",           "color": "accent",    "bold": False, "dim": False},
+            {"h": 2, "chars": "~ ≈ ~ ≈ ~ ≈ ~ ≈ ~ ≈", "color": "accent",    "bold": False, "dim": True },
         ],
-        # Prop layout, positioned proportionally so it scales with width.
         "palms":    [{"x_frac": 0.10, "lean": -1, "h": 3},
                      {"x_frac": 0.88, "lean": 1,  "h": 3}],
         "umbrella": {"x_frac": 0.32},
@@ -150,98 +223,59 @@ GROUND_THEMES = {
                      {"x_frac": 0.60, "row_from_top": 3},
                      {"x_frac": 0.75, "row_from_top": 0}],
     },
-
     "forest": {
         "label":          "Forest",
-        "color_pair":     34,   # dark green
-        "accent_pair":    35,   # mid green
-        "highlight_pair": 36,   # bright green / yellow-green
+        "color_pair":     34,
+        "accent_pair":    35,
+        "highlight_pair": 36,
         "detail_fn":      "forest_canopy",
         "tallest":        18,
         "layers": [
-            {"h": 2, "chars": "████████████",                    "color": "main",      "bold": True,  "dim": False},
-            {"h": 3, "chars": "▓██▓██▓██▓██",                   "color": "main",      "bold": False, "dim": False},
-            {"h": 3, "chars": "▒▓█▒▓█▒▓█▒▓█",                  "color": "accent",    "bold": False, "dim": False},
-            {"h": 4, "chars": " T T T T T T T T T T ",          "color": "accent",    "bold": True,  "dim": False},
-            {"h": 3, "chars": "/T\\ /T\\ /T\\ /T\\ /T\\",      "color": "highlight", "bold": False, "dim": False},
-            {"h": 3, "chars": "^^^^^^^^^^^^^^^^^^^^^^^^^^^",     "color": "highlight", "bold": True,  "dim": False},
+            {"h": 2, "chars": "████████████",               "color": "main",      "bold": True,  "dim": False},
+            {"h": 3, "chars": "▓██▓██▓██▓██",              "color": "main",      "bold": False, "dim": False},
+            {"h": 3, "chars": "▒▓█▒▓█▒▓█▒▓█",             "color": "accent",    "bold": False, "dim": False},
+            {"h": 4, "chars": " T T T T T T T T T T ",     "color": "accent",    "bold": True,  "dim": False},
+            {"h": 3, "chars": "/T\\ /T\\ /T\\ /T\\ /T\\", "color": "highlight", "bold": False, "dim": False},
+            {"h": 3, "chars": "^^^^^^^^^^^^^^^^^^^^^^^^^^^", "color": "highlight", "bold": True,  "dim": False},
         ],
     },
     "ranch": {
         "label":          "Ranch",
-        "color_pair":     37,   # brown/tan ground
-        "accent_pair":    38,   # wood fence / barn red
-        "highlight_pair": 39,   # sky-touching grass green
+        "color_pair":     37,
+        "accent_pair":    38,
+        "highlight_pair": 39,
         "detail_fn":      "ranch_fence",
         "tallest":        10,
         "layers": [
-            {"h": 2, "chars": "▓▓▓▓▓▓▓▓▓▓▓▓",                  "color": "main",      "bold": True,  "dim": False},
-            {"h": 2, "chars": "▒▒▒▒▒▒▒▒▒▒▒▒",                  "color": "main",      "bold": False, "dim": False},
-            {"h": 1, "chars": "─┤ ├─┤ ├─┤ ├─┤ ├─",             "color": "accent",    "bold": True,  "dim": False},
-            {"h": 1, "chars": " │   │   │   │   │ ",            "color": "accent",    "bold": False, "dim": False},
-            {"h": 1, "chars": "─┤ ├─┤ ├─┤ ├─┤ ├─",             "color": "accent",    "bold": True,  "dim": False},
-            {"h": 1, "chars": " │   │   │   │   │ ",            "color": "accent",    "bold": False, "dim": False},
-            {"h": 2, "chars": ".,.,.,wWwWw.,.,.,wWwWw",         "color": "highlight", "bold": False, "dim": False},
+            {"h": 2, "chars": "▓▓▓▓▓▓▓▓▓▓▓▓",           "color": "main",      "bold": True,  "dim": False},
+            {"h": 2, "chars": "▒▒▒▒▒▒▒▒▒▒▒▒",           "color": "main",      "bold": False, "dim": False},
+            {"h": 1, "chars": "─┤ ├─┤ ├─┤ ├─┤ ├─",      "color": "accent",    "bold": True,  "dim": False},
+            {"h": 1, "chars": " │   │   │   │   │ ",     "color": "accent",    "bold": False, "dim": False},
+            {"h": 1, "chars": "─┤ ├─┤ ├─┤ ├─┤ ├─",      "color": "accent",    "bold": True,  "dim": False},
+            {"h": 1, "chars": " │   │   │   │   │ ",     "color": "accent",    "bold": False, "dim": False},
+            {"h": 2, "chars": ".,.,.,wWwWw.,.,.,wWwWw",  "color": "highlight", "bold": False, "dim": False},
         ],
     },
     "ocean": {
         "label":          "Ocean",
-        "color_pair":     40,   # deep blue
-        "accent_pair":    41,   # mid blue
-        "highlight_pair": 42,   # white foam / bright
+        "color_pair":     40,
+        "accent_pair":    41,
+        "highlight_pair": 42,
         "detail_fn":      "ocean_waves",
         "tallest":        10,
         "layers": [
-            {"h": 2, "chars": "████████████",                    "color": "main",      "bold": True,  "dim": False},
-            {"h": 2, "chars": "▓▓▓▓▓▓▓▓▓▓▓▓",                  "color": "main",      "bold": False, "dim": False},
-            {"h": 2, "chars": "≋≋≈≋≋≈≋≋≈≋≋≈",                  "color": "accent",    "bold": False, "dim": False},
-            {"h": 2, "chars": "≈ ~ ≈ ~ ≈ ~ ≈ ~",               "color": "accent",    "bold": True,  "dim": False},
-            {"h": 2, "chars": "~ ≋ ~ ≋ ~ ≋ ~ ≋",               "color": "highlight", "bold": True,  "dim": False},
+            {"h": 2, "chars": "████████████",             "color": "main",      "bold": True,  "dim": False},
+            {"h": 2, "chars": "▓▓▓▓▓▓▓▓▓▓▓▓",            "color": "main",      "bold": False, "dim": False},
+            {"h": 2, "chars": "≋≋≈≋≋≈≋≋≈≋≋≈",            "color": "accent",    "bold": False, "dim": False},
+            {"h": 2, "chars": "≈ ~ ≈ ~ ≈ ~ ≈ ~",         "color": "accent",    "bold": True,  "dim": False},
+            {"h": 2, "chars": "~ ≋ ~ ≋ ~ ≋ ~ ≋",         "color": "highlight", "bold": True,  "dim": False},
         ],
     },
 }
 
-
-# Fallback glyphs for beach props when the terminal can't render the
-# preferred unicode character (used only in ascii_mode).
 _BEACH_ASCII_FALLBACK = {
     "≈": "~", "≋": "~", "▒": ".", "░": ".", "▓": "#",
     "⋆": "*", "˚": ".", "∘": "o",
-}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SCENE THEME REGISTRY
-#
-# A "scene" is a third background mode, separate from sky+ground: it is one
-# unified full-screen composition rather than a stacked sky layer + ground
-# layer. Used for backgrounds that don't decompose cleanly into "sky on top,
-# ground on bottom" — e.g. a centered sun whose glow spans both halves of
-# the screen, with a foreground element (palm tree) breaking across the
-# horizon line.
-#
-# Each scene theme defines:
-#   color_pairs: dict of named curses pair ids used by this scene
-#   build_fn:    string key naming which _build_<x>_scene() method lays out
-#                the character/color grids for this scene
-# ══════════════════════════════════════════════════════════════════════════════
-SCENE_THEMES = {
-    "vaporwave sunset": {
-        "label":       "Vaporwave Sunset",
-        "build_fn":    "vaporwave_sunset",
-        # Color roles -> curses pair ids (wired up in UIEngine, see notes below)
-        "pairs": {
-            "sky_dim":    50,   # faint blue sky texture
-            "sky_mid":    51,   # mid blue / cyan
-            "sun_core":   52,   # bright pink/white sun center
-            "sun_mid":    53,   # magenta sun body
-            "sun_edge":   54,   # deep pink sun edge
-            "horizon":    55,   # pink horizon line
-            "water":      56,   # blue water/reflection
-            "water_glow": 57,   # pink reflection under the sun
-            "palm":       58,   # dark magenta/blue palm silhouette
-        },
-    },
 }
 
 
@@ -251,32 +285,71 @@ SCENE_THEMES = {
 class BackgroundEngine:
 
     def __init__(self, stdscr,
-                 sky_theme="starry night",
-                 ground_theme="city",
-                 sky_enabled=True,
-                 ground_enabled=True,
-                 mode="layered",
-                 scene_theme="vaporwave sunset"):
-        """
-        mode: "layered" (default, original sky+ground stacking) or
-              "scene" (single unified full-screen background, e.g.
-              vaporwave sunset). When mode="scene", sky_enabled and
-              ground_enabled are ignored — the scene always draws as
-              one composition.
-        """
-        self.stdscr       = stdscr
+                sky_theme="starry night",
+                ground_theme="city",
+                sky_enabled=True,
+                ground_enabled=True,
+                mode="layered",
+                scene_theme="vaporwave sunset",
+                user_image_path=""):
+        self.stdscr         = stdscr
         self.sky_enabled    = sky_enabled
         self.ground_enabled = ground_enabled
         self.ascii_mode     = False
+        self.rich_color     = False   # set True if terminal supports 256 colors
         self.max_y, self.max_x = stdscr.getmaxyx()
-        self.frame = 0  # increments each draw() call; drives animation
+        self.frame = 0
+        self.user_image_path = user_image_path
+        self.user_image_palette = []
 
         self.mode = mode if mode in ("layered", "scene") else "layered"
-        self._set_scene(scene_theme)
-
         self._set_sky(sky_theme)
         self._set_ground(ground_theme)
+        self._set_scene(scene_theme)
+        self._init_colors()
         self._generate()
+
+    # ── Color initialisation ───────────────────────────────────────────────
+
+    def _init_colors(self):
+        """
+        Register curses color pairs for the active scene palette.
+        Must be called after curses.start_color() has been called (UIEngine
+        already calls it in its __init__, which runs before BackgroundEngine).
+
+        For each palette entry i, we register:
+          - In 256-color mode: a custom RGB color at index (100 + i), then
+            a pair (BASE_PAIR + i) of that custom color on black.
+          - In 8-color fallback: a pair (BASE_PAIR + i) using the closest
+            standard COLOR_* constant on black.
+
+        This only registers pairs for the *currently active scene* — no
+        wasted slots from scenes you're not using.
+        """
+        if self.mode != "scene":
+            return
+
+        scene = self.scene_theme
+        self.rich_color = curses.has_colors() and curses.can_change_color() and curses.COLORS >= 256
+
+        if self.rich_color:
+            palette = scene.get("palette_256", [])
+            for i, (r, g, b) in enumerate(palette):
+                color_idx = 100 + i          # custom color slot (100–123 for 24 entries)
+                pair_id   = BASE_PAIR + i
+                try:
+                    curses.init_color(color_idx, r, g, b)
+                    curses.init_pair(pair_id, color_idx, curses.COLOR_BLACK)
+                except curses.error:
+                    pass
+        else:
+            palette_8 = scene.get("palette_8", [])
+            for i, color_const in enumerate(palette_8):
+                pair_id = BASE_PAIR + i
+                try:
+                    curses.init_pair(pair_id, color_const, curses.COLOR_BLACK)
+                except curses.error:
+                    pass
 
     # ── Theme setters ──────────────────────────────────────────────────────
 
@@ -293,31 +366,31 @@ class BackgroundEngine:
         self.scene_theme = SCENE_THEMES.get(name, SCENE_THEMES["vaporwave sunset"])
 
     def set_sky(self, name):
-        """Switch sky theme and regenerate."""
         self._set_sky(name)
         self._generate()
 
     def set_ground(self, name):
-        """Switch ground theme and regenerate."""
         self._set_ground(name)
         self._generate()
 
     def set_scene(self, name):
-        """Switch scene theme (used in mode='scene') and regenerate."""
         self._set_scene(name)
+        self._init_colors()
         self._generate()
 
-    def set_mode(self, mode):
-        """Switch between 'layered' (sky+ground) and 'scene' (unified)."""
-        if mode in ("layered", "scene"):
-            self.mode = mode
+    def set_user_image_path(self, path):
+        self.user_image_path = path or ""
+        if self.mode == "scene" and self.scene_name == "user image":
             self._generate()
 
-    def set_sky_enabled(self, enabled):
-        self.sky_enabled = enabled
+    def set_mode(self, mode):
+        if mode in ("layered", "scene"):
+            self.mode = mode
+            self._init_colors()
+            self._generate()
 
-    def set_ground_enabled(self, enabled):
-        self.ground_enabled = enabled
+    def set_sky_enabled(self, v):    self.sky_enabled = v
+    def set_ground_enabled(self, v): self.ground_enabled = v
 
     # ── Unicode detection ──────────────────────────────────────────────────
 
@@ -328,12 +401,9 @@ class BackgroundEngine:
         except curses.error:
             self.ascii_mode = True
 
-    # ── Pre-generation ─────────────────────────────────────────────────────
+    # ── Top-level generate ─────────────────────────────────────────────────
 
     def _generate(self):
-        """Pre-calculate static layout. In 'layered' mode this builds sky
-        particles and (for beach) prop positions. In 'scene' mode it
-        builds the unified scene grid instead."""
         self._detect_unicode()
         rows, cols = self.max_y, self.max_x
 
@@ -341,8 +411,9 @@ class BackgroundEngine:
             self._generate_scene(rows, cols)
             return
 
-        sky  = self.sky_theme
-        chars = sky["ascii_chars"] if self.ascii_mode else sky["particle_chars"]
+        # Layered mode — existing particle generation
+        sky     = self.sky_theme
+        chars   = sky["ascii_chars"] if self.ascii_mode else sky["particle_chars"]
         weights = sky["particle_weights"][:len(chars)]
 
         sky_rows    = int(rows * 0.75)
@@ -360,121 +431,299 @@ class BackgroundEngine:
         if self.ground_name == "beach":
             self._generate_beach_props(rows, cols)
 
+
+# ══════════════════════════════════════════════════════════════════════
+    # SCENE FRAMEBUFFER SYSTEM
+    # ══════════════════════════════════════════════════════════════════════
+
     def _generate_scene(self, rows, cols):
-        """Dispatch to the right scene builder based on scene_theme."""
+        self.fb = np.zeros((rows * 2, cols * 2), dtype=np.uint8)
+        self.cb = np.zeros((rows,     cols),     dtype=np.uint8)
+
         build_fn = self.scene_theme.get("build_fn")
         builders = {
             "vaporwave_sunset": self._build_vaporwave_sunset,
+            "user_image":       self._build_user_image,
         }
         builder = builders.get(build_fn, self._build_vaporwave_sunset)
-        self.scene_grid = builder(rows, cols)
+        builder(rows, cols)
 
     def _build_vaporwave_sunset(self, rows, cols):
-        """
-        Build the vaporwave beach-sunset scene as a grid of (char, pair_key)
-        tuples. pair_key is a string looked up against scene_theme["pairs"]
-        at draw time, so color assignment stays data-driven.
+        # ── 1. Coordinate grids ───────────────────────────────────────────
+        row_idx = np.arange(rows, dtype=np.float32)
+        col_idx = np.arange(cols, dtype=np.float32)
+        Y = row_idx[:, np.newaxis] * np.ones((1, cols), dtype=np.float32)
+        X = np.ones((rows, 1), dtype=np.float32) * col_idx[np.newaxis, :]
 
-        Layout: sky texture (top) -> centered sun with horizontal scanline
-        gaps (vaporwave signature) sitting on the horizon -> reflective
-        water with vertical streaks under the sun -> a foreground palm
-        tree silhouette breaking across the horizon on the right side.
-        """
-        import math
+        yn = Y / max(rows - 1, 1)
+        xn = X / max(cols - 1, 1)
 
-        grid = [[(' ', None) for _ in range(cols)] for _ in range(rows)]
+        # ── 2. Sun geometry ───────────────────────────────────────────────
+        horizon_y  = 0.65          
+        sun_cx     = 0.35          # Shifted slightly left to balance the palm tree
+        sun_cy     = horizon_y - 0.05
+        sun_radius = 0.25          
+        aspect = cols / (rows * 2.0)   
+        dx = xn - sun_cx
+        dy = (yn - sun_cy) * aspect
+        sun_dist = np.sqrt(dx * dx + dy * dy)   
+        sun_mask = (sun_dist <= sun_radius)      
 
-        horizon_row = int(rows * 0.66)
-        sun_cx = cols // 2
-        sun_cy = horizon_row - max(1, int(rows * 0.07))
-        sun_r  = max(3, int(min(cols * 0.22, rows * 0.5)))
-        density_chars = " .:-=+*#%@"
+        # ── 3. Scanline mask (vaporwave signature) ────────────────────────
+        # Cut horizontal slices out of the bottom half of the sun
+        sun_lower_half = yn > sun_cy
+        scanline_suppress = (row_idx[:, np.newaxis] % 2 != 0) & sun_lower_half & (sun_dist > sun_radius * 0.1)
+        sun_visible = sun_mask & ~scanline_suppress
 
-        def put(y, x, ch, pair_key):
-            if 0 <= y < rows and 0 <= x < cols:
-                grid[y][x] = (ch, pair_key)
+        # ── 4. Sky gradient (Teal to Magenta) ─────────────────────────────
+        sky_mask = (yn < horizon_y)
+        sky_t = np.clip(yn / max(horizon_y, 0.01), 0.0, 1.0)
+        
+        # Exponential curve so the dark teal dominates the top, and magenta compresses at the horizon
+        sky_band = (np.power(sky_t, 1.5) * 11.99).astype(np.uint8)   # Maps to 0-11
+        self.cb[sky_mask] = sky_band[sky_mask]
+        
+        sky_px = np.repeat(np.repeat(sky_mask, 2, axis=0), 2, axis=1)
+        self.fb[sky_px] = 1
 
-        # --- Sun: concentric density rings with horizontal scanline gaps
-        for y in range(rows):
-            for x in range(cols):
-                dx = x - sun_cx
-                dy = (y - sun_cy) * 2.1  # character aspect correction
-                dist = math.sqrt(dx * dx + dy * dy)
-                if dist <= sun_r:
-                    if y % 3 == 0 and dist > sun_r * 0.3:
-                        continue  # scanline gap — the vaporwave stripe look
-                    t = 1 - (dist / sun_r)
-                    idx = min(len(density_chars) - 1, int(t * (len(density_chars) - 1)))
-                    idx = max(2, idx)
-                    pair_key = "sun_core" if t > 0.7 else ("sun_mid" if t > 0.35 else "sun_edge")
-                    put(y, x, density_chars[idx], pair_key)
+        # ── 5. Sun colouring (Vertical Gradient) ──────────────────────────
+        # Yellow at the top (17), fading to Pink at the bottom (12)
+        sun_top = sun_cy - (sun_radius / aspect)
+        sun_bottom = sun_cy + (sun_radius / aspect)
+        sun_t = np.clip((yn - sun_top) / max(sun_bottom - sun_top, 0.001), 0.0, 1.0)
+        
+        sun_band = 17 - (sun_t * 5.99).astype(np.uint8)
+        self.cb[sun_mask] = sun_band[sun_mask]
+        
+        sun_px = np.repeat(np.repeat(sun_visible, 2, axis=0), 2, axis=1)
+        self.fb[sun_px] = 1
 
-        # --- Sky texture: sparse, denser near the horizon, sparser near top
-        rng = random.Random(rows * 9176 + cols)  # stable per terminal size
-        for y in range(0, horizon_row):
-            density = (y / max(1, horizon_row)) * 0.045
-            pair_key = "sky_mid" if y > horizon_row * 0.5 else "sky_dim"
-            for x in range(cols):
-                if grid[y][x][0] == ' ' and rng.random() < density:
-                    put(y, x, rng.choice([".", "·", ":"]), pair_key)
+        # ── 6. Water with Ripples ─────────────────────────────────────────
+        water_mask = (yn >= horizon_y)
+        self.cb[water_mask] = 18 # Deep teal water base
+        
+        # Horizontal lines for ripples
+        ripple_y_pink = (row_idx[:, np.newaxis] % 2 == 0)
+        ripple_y_yellow = (row_idx[:, np.newaxis] % 3 == 0)
+        
+        # Wide pink reflection
+        pink_refl_mask = water_mask & ripple_y_pink & (np.abs(xn - sun_cx) < sun_radius * 1.5)
+        self.cb[pink_refl_mask] = 19
+        
+        # Narrow yellow reflection in the center
+        yellow_refl_mask = water_mask & ripple_y_yellow & (np.abs(xn - sun_cx) < sun_radius * 0.5)
+        self.cb[yellow_refl_mask] = 20
 
-        # --- Horizon line
-        for x in range(cols):
-            if grid[horizon_row][x][0] == ' ':
-                put(horizon_row, x, '-', "horizon")
+        water_px = np.repeat(np.repeat(water_mask, 2, axis=0), 2, axis=1)
+        self.fb[water_px] = 1
 
-        # --- Water: vertical reflection streaks under the sun, ripples elsewhere
-        for y in range(horizon_row + 1, rows):
-            for x in range(cols):
-                dx = abs(x - sun_cx)
-                if dx < sun_r and (x + y) % 4 < 2:
-                    ch = '|' if (x + y) % 8 < 4 else ':'
-                    put(y, x, ch, "water_glow")
-                elif (x + y * 2) % 7 == 0:
-                    put(y, x, '~', "water")
-
-        # --- Palm tree: fixed silhouette, asymmetric, foreground right side
-        # Compact hand-authored shape (not procedurally generated) so the
-        # canopy stays a clean readable silhouette rather than noisy lines.
-        palm_rows = [
-            "      __,---.__         ",
-            "   _,-'        `-.__    ",
-            " ,'        ___      `-, ",
-            "/      _,-'   `-._     \\",
-            "      '            `    ",
-            "                #       ",
-            "               ##       ",
-            "              ##        ",
-            "             ##         ",
-            "            ##          ",
-            "           ##           ",
-            "          ##            ",
+        # ── 7. Palm Silhouette ────────────────────────────────────────────
+        palm_rows_data = [
+            "       _.-'~~~'-._       ",
+            "    .-~ \\__/  \\__/ ~-.   ",
+            "  .~  /    |  |    \\  ~. ",
+            " /   /     |  |     \\   \\",
+            "|   |      |  |      |   |",
+            " \\   \\     |  |     /   /",
+            "  `~._\\    |  |    /_.~` ",
+            "       `~--|  |--~`      ",
+            "           |  |          ",
+            "           |  |          ",
+            "          /   |          ",
+            "         |    |          ",
+            "         |    |          ",
         ]
-        # Scale the palm down proportionally on small terminals so it
-        # doesn't dominate or overflow a narrow window.
-        if cols < 60 or rows < 18:
-            palm_rows = [
-                "  _,--.__      ",
-                " '       `-.__ ",
-                "          ___`,",
-                "       #       ",
-                "      ##       ",
-                "     ##        ",
-                "    ##         ",
-            ]
 
-        palm_h = len(palm_rows)
-        palm_w = len(palm_rows[0])
-        palm_top  = horizon_row - palm_h + max(2, int(palm_h * 0.4))
-        palm_left = cols - palm_w - max(2, int(cols * 0.04))
+        palm_h    = len(palm_rows_data)
+        palm_w    = max(len(r) for r in palm_rows_data)
+        palm_top  = int(rows * 0.35)
+        palm_left = cols - palm_w - max(4, cols // 15)
 
-        for ry, line in enumerate(palm_rows):
-            gy = palm_top + ry
-            for rx, ch in enumerate(line):
-                if ch != ' ':
-                    put(gy, palm_left + rx, ch, "palm")
+        for ri, line in enumerate(palm_rows_data):
+            cy = palm_top + ri
+            if not (0 <= cy < rows):
+                continue
+            
+            # Apply magenta highlights to the fronds (top half), teal to trunk (bottom half)
+            palm_color = 22 if ri < palm_h // 2 else 23
+            
+            for ci, ch in enumerate(line):
+                cx = palm_left + ci
+                if ch != ' ' and 0 <= cx < cols:
+                    # Inner core of the palm remains pure black (21)
+                    final_color = 21 if ch in ['|', '\\', '/'] else palm_color
+                    self.cb[cy, cx] = final_color
+                    py, px = cy * 2, cx * 2
+                    self.fb[py:py+2, px:px+2] = 1
 
-        return grid
+    def _build_user_image(self, rows, cols):
+        """Load and render a user-selected image using the half-block matrix rule."""
+        if not self.user_image_path:
+            self.fb.fill(0)
+            self.cb.fill(0)
+            return
+        
+        try:
+            from files.image_process import process_image_for_terminal
+            img, palette = process_image_for_terminal(
+                self.user_image_path,
+                target_cols=cols,
+                target_lines=rows,
+                palette_size=14,
+            )
+            self.user_image_palette = palette
+            
+            # Register the full 196 combination matrix
+            self._register_user_image_combinations(palette)
+            
+            for y in range(rows):
+                for x in range(cols):
+                    top_idx = img.getpixel((x, y * 2))
+                    bottom_idx = img.getpixel((x, y * 2 + 1))
+                    
+                    # Store the unique 2D pair ID (0 to 195) in the color buffer
+                    self.cb[y, x] = (top_idx * 14) + bottom_idx
+                    
+                    # Force the framebuffer values to calculate out to 3 ("▄")
+                    py, px = y * 2, x * 2
+                    self.fb[py, px:px+2] = 0     # Top half off (background color takes over)
+                    self.fb[py+1, px:px+2] = 1   # Bottom half on (foreground character shows)
+                    
+        except Exception as e:
+            self.fb.fill(0)
+            self.cb.fill(0)
+
+    def _register_user_image_combinations(self, palette):
+        """Registers all 196 combinations of foreground and background pairs dynamically."""
+        if not palette:
+            return
+
+        self.rich_color = curses.has_colors() and curses.can_change_color() and curses.COLORS >= 256
+        self._pair_bold_flags = {}
+        
+        # 1. Initialize the 14 base colors into safe system slots (16-29)
+        if self.rich_color:
+            for i, (r, g, b) in enumerate(palette):
+                color_idx = 16 + i
+                c_r = r * 1000 // 255
+                c_g = g * 1000 // 255
+                c_b = b * 1000 // 255
+                try:
+                    curses.init_color(color_idx, c_r, c_g, c_b)
+                except curses.error:
+                    pass
+
+        # 2. Map every possible Top/Bottom background/foreground pair combination
+        fallback_colors = [
+            curses.COLOR_BLACK, curses.COLOR_BLUE, curses.COLOR_CYAN, curses.COLOR_GREEN,
+            curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_WHITE, curses.COLOR_YELLOW,
+        ]
+
+        for top_idx in range(14):
+            for bottom_idx in range(14):
+                pair_idx = (top_idx * 14) + bottom_idx
+                pair_id = BASE_PAIR + pair_idx
+                
+                if self.rich_color:
+                    fg = 16 + bottom_idx  # Character color (bottom half)
+                    bg = 16 + top_idx     # Background color (top half)
+                    try:
+                        curses.init_pair(pair_id, fg, bg)
+                    except curses.error:
+                        pass
+                else:
+                    # 8-Color fallback matrix pairing
+                    r_fg, g_fg, b_fg = palette[bottom_idx]
+                    r_bg, g_bg, b_bg = palette[top_idx]
+                    
+                    fg_const = self._nearest_standard_color((r_fg, g_fg, b_fg), fallback_colors)
+                    bg_const = self._nearest_standard_color((r_bg, g_bg, b_bg), fallback_colors)
+                    
+                    self._pair_bold_flags[pair_id] = max(r_fg, g_fg, b_fg) > 128
+                    try:
+                        curses.init_pair(pair_id, fg_const, bg_const)
+                    except curses.error:
+                        pass
+
+    def _nearest_standard_color(self, rgb, color_constants):
+        """Map an RGB triplet to the nearest standard curses color."""
+        stdlib_rgb = {
+            curses.COLOR_BLACK:   (0, 0, 0),
+            curses.COLOR_RED:     (205, 0, 0),
+            curses.COLOR_GREEN:   (0, 205, 0),
+            curses.COLOR_YELLOW:  (205, 205, 0),
+            curses.COLOR_BLUE:    (0, 0, 238),
+            curses.COLOR_MAGENTA: (205, 0, 205),
+            curses.COLOR_CYAN:    (0, 205, 205),
+            curses.COLOR_WHITE:   (229, 229, 229),
+        }
+
+        best_color = curses.COLOR_WHITE
+        best_distance = None
+        for color_const in color_constants:
+            cr, cg, cb = stdlib_rgb.get(color_const, (255, 255, 255))
+            distance = ((rgb[0] - cr) ** 2) + ((rgb[1] - cg) ** 2) + ((rgb[2] - cb) ** 2)
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_color = color_const
+        return best_color
+
+# ══════════════════════════════════════════════════════════════════════
+    # BLITTER — converts framebuffer + color buffer → terminal output
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _blit_scene(self):
+        """
+        Read self.fb and self.cb, output one addstr call per terminal cell.
+
+        For each cell (row, col):
+          1. Extract the 2×2 pixel block from self.fb.
+          2. Encode as 4-bit integer: TL*8 + TR*4 + BL*2 + BR*1.
+          3. Look up the glyph in QUAD_PIXEL_DICT.
+          4. Look up the color pair from self.cb[row, col].
+          5. Call stdscr.addstr(row, col, glyph, color_pair).
+
+        The entire encoding step is vectorised with numpy before the loop,
+        so the Python loop only does terminal I/O — the math is in C.
+        """
+        rows, cols = self.max_y, self.max_x
+        rows = min(rows, self.fb.shape[0] // 2)
+        cols = min(cols, self.fb.shape[1] // 2)
+
+        # Extract the four sub-pixel planes from the framebuffer.
+        # fb has shape (rows*2, cols*2). Stride-slice to get each corner.
+        TL = self.fb[0::2, 0::2][:rows, :cols]   # even row, even col
+        TR = self.fb[0::2, 1::2][:rows, :cols]   # even row, odd  col
+        BL = self.fb[1::2, 0::2][:rows, :cols]   # odd  row, even col
+        BR = self.fb[1::2, 1::2][:rows, :cols]   # odd  row, odd  col
+
+        # Encode as 4-bit index.  All four planes are uint8 (0 or 1).
+        quad_idx = (TL.astype(np.uint8) * 8 +
+                    TR.astype(np.uint8) * 4 +
+                    BL.astype(np.uint8) * 2 +
+                    BR.astype(np.uint8))           # shape (rows, cols), values 0–15
+
+        # Color buffer slice to match clamped dimensions.
+        cb_slice = self.cb[:rows, :cols]
+
+        bold_flags = getattr(self, "_pair_bold_flags", {})
+
+        for r in range(rows):
+            for c in range(cols):
+                glyph   = QUAD_PIXEL_DICT[quad_idx[r, c]]
+                pair_id = BASE_PAIR + int(cb_slice[r, c])
+                attr    = curses.color_pair(pair_id)
+                if bold_flags.get(pair_id, False):
+                    attr |= curses.A_BOLD
+                try:
+                    self.stdscr.addstr(r, c, glyph, attr)
+                except curses.error:
+                    pass
+
+
+# ══════════════════════════════════════════════════════════════════════
+    # LAYERED MODE — existing methods (unchanged)
+    # ══════════════════════════════════════════════════════════════════════
 
     def _generate_beach_props(self, rows, cols):
         """Lay out palm trees, umbrella, crab, shells, and gulls once per
@@ -788,35 +1037,19 @@ class BackgroundEngine:
 
             col += b["w"] + 1
 
-    # ── Scene drawing (mode="scene") ───────────────────────────────────────
 
-    def _draw_scene(self):
-        """Draw the pre-built unified scene grid. Falls back to 'palm'
-        pair (or pair id 0) for any pair_key not present in the theme's
-        'pairs' map, so a missing curses pair never raises."""
-        pairs = self.scene_theme.get("pairs", {})
-        grid = getattr(self, "scene_grid", None)
-        if not grid:
-            return
-        rows = len(grid)
-        for y in range(rows):
-            row = grid[y]
-            for x in range(len(row)):
-                ch, pair_key = row[x]
-                if ch == ' ' or ch is None:
-                    continue
-                pair_id = pairs.get(pair_key, 0)
-                self._safe_addstr(y, x, ch, curses.color_pair(pair_id))
-
-    # ── Public draw ────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════
+    # PUBLIC API
+    # ══════════════════════════════════════════════════════════════════════
 
     def draw(self):
-        """Draw the active mode. 'layered' draws sky then ground as
-        before; 'scene' draws the single unified composition instead.
-        frame increments here so beach foam / future scene animation can
-        key off it across redraws."""
+        """
+        In scene mode:  blit the pre-built framebuffer to the terminal.
+        In layered mode: draw sky then ground as before.
+        frame counter drives any future animation (foam, scanline shift, etc.)
+        """
         if self.mode == "scene":
-            self._draw_scene()
+            self._blit_scene()
         else:
             if self.sky_enabled:
                 self._draw_sky()
@@ -826,5 +1059,6 @@ class BackgroundEngine:
 
     def handle_resize(self):
         self.max_y, self.max_x = self.stdscr.getmaxyx()
+        self._init_colors()   # re-register pairs in case terminal changed
         self._generate()
         self.frame = 0

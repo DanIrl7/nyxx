@@ -83,6 +83,20 @@ class UIEngine:
         curses.init_pair(40, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # deep water
         curses.init_pair(41, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # mid water
         curses.init_pair(42, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # foam/highlight
+
+        _vw8 = [
+            curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
+            curses.COLOR_CYAN, curses.COLOR_CYAN, curses.COLOR_CYAN,
+            curses.COLOR_MAGENTA, curses.COLOR_MAGENTA, curses.COLOR_MAGENTA,
+            curses.COLOR_MAGENTA, curses.COLOR_RED,     curses.COLOR_RED,
+            curses.COLOR_YELLOW,  curses.COLOR_YELLOW,  curses.COLOR_YELLOW,
+            curses.COLOR_WHITE,   curses.COLOR_WHITE,   curses.COLOR_WHITE,
+            curses.COLOR_BLUE,    curses.COLOR_CYAN,    curses.COLOR_MAGENTA,
+            curses.COLOR_BLUE,    curses.COLOR_BLUE,    curses.COLOR_BLUE,
+        ]
+        for _i, _c in enumerate(_vw8):
+            curses.init_pair(59 + _i, _c, curses.COLOR_BLACK)
+
         self.error_message = None
 
     def cleanup(self):
@@ -687,8 +701,13 @@ class UIEngine:
         return start_y, start_x, box_width
 
     def draw_theme_panel(self, sky_themes, ground_themes, active_sky, active_ground,
-                     sky_enabled, ground_enabled, mode="sky"):
+                     sky_enabled, ground_enabled, scene_names=None, active_scene=None, mode="sky"):
        
+        if scene_names is None:
+            scene_names = []
+        if active_scene is None:
+            active_scene = ""
+        
         max_y, max_x = self.stdscr.getmaxyx()
         panel_w = min(54, max_x - 4)
         panel_h = min(16, max_y - 4)
@@ -715,7 +734,9 @@ class UIEngine:
             pass
 
         # ── Tab bar ───────────────────────────────────────────────
-        tabs = [("sky", " 🌙 Sky "), ("ground", " 🏙  Ground "), ("toggles", " ⚙  Toggles ")]
+        tabs = [("sky", " 🌙 Sky "), ("ground", " 🏙  Ground "),
+                ("toggles", " ⚙  Toggles "), ("scenes", " 🌅 Scenes ")]
+
         tab_x = start_x + 2
         for key, label in tabs:
             attr = (curses.color_pair(self.SELECTION) if mode == key
@@ -782,6 +803,23 @@ class UIEngine:
                 indicator = "▸ " if selected else "  "
                 status    = "[ON] " if enabled else "[OFF]"
                 line = self._truncate(f"{indicator}{label:<16}  {status}", inner_w)
+                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.WHITE)
+                try:
+                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
+                except curses.error:
+                    pass
+
+        # ── Scene list ────────────────────────────────────────────
+        elif mode == "scenes":
+            for i, name in enumerate(scene_names):
+                row_y = list_start + i
+                if row_y >= footer_row:
+                    break
+                selected = (i == self.selection_index)
+                active   = (name == active_scene)
+                marker   = " ✓" if active else "  "
+                indicator = "▸ " if selected else "  "
+                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
                 attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.WHITE)
                 try:
                     self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)

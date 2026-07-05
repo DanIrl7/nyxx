@@ -1,0 +1,35 @@
+
+blue: #305460;
+bluel2: #54849C;
+bluel1: #486C84;
+blued2: #182430;
+blued1: #243048;
+black: #00000C;
+magenta: #842448
+magental1: #9C2460
+magental2: #CC609C
+magentad1: #543048
+magentad2: #301824
+sun: #F0D8A8
+
+md1bl1- magentad1, bluel1
+imb1dl1
+bl1blk
+imb1blk
+mblk
+imblk
+md2blk
+imd2blk
+ml2sun
+iml2sun
+sunblk
+isunblk
+ml1ml2
+iml1ml2
+md1md2
+imd1md2
+bl1bl2
+ibl1ibl2
+bd1bl2
+ibd1ibd2
+
