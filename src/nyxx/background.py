@@ -28,7 +28,10 @@ VERTICAL_SMOOTH_DICT = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█
 # ══════════════════════════════════════════════════════════════════════════════
 # COLOR PALETTE
 #
-# Pair IDs 1–58 are used by UIEngine (ui.py). Scene renderer uses 59–255.
+# Pair ID allocation (0–255 total):
+#   1–7    : UIEngine panel / border / hint pairs  (ui.py)
+#   8–203  : Scene renderer (vaporwave palette + user image combos)
+#   204–235: Layered-theme sky / ground pairs       (registered in ui.py)
 #
 # PALETTE_8 is the fallback for 8-color terminals — each entry is a standard
 # curses color constant approximating the target hue.
@@ -38,7 +41,7 @@ VERTICAL_SMOOTH_DICT = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█
 # The pair id for palette index i is BASE_PAIR + i.
 # ══════════════════════════════════════════════════════════════════════════════
 
-BASE_PAIR = 59  # first curses pair id owned by the scene renderer
+BASE_PAIR = 8  # first curses pair id owned by the scene renderer
 
 # Vaporwave sunset palette — 24 colors, ordered dark→bright within each zone.
 # Zones: [0–5] deep sky, [6–11] sun glow / horizon, [12–17] sun disc,
@@ -126,7 +129,7 @@ SKY_THEMES = {
     "starry night": {
         "label":            "Starry Night",
         "color_pairs":      [5, 6, 7],
-        "glow_pair":        9,
+        "glow_pair":        204,
         "glow_char":        "▁",
         "density":          0.04,
         "particle_chars":   ["✦", "✧", "*", "·", "◇", "★", "☆"],
@@ -135,8 +138,8 @@ SKY_THEMES = {
     },
     "vaporwave": {
         "label":            "Vaporwave",
-        "color_pairs":      [13, 14, 15],
-        "glow_pair":        17,
+        "color_pairs":      [205, 206, 207],
+        "glow_pair":        208,
         "glow_char":        "─",
         "density":          0.035,
         "particle_chars":   ["◆", "◇", "▪", "·", "░", "▫", "★"],
@@ -145,8 +148,8 @@ SKY_THEMES = {
     },
     "matrix": {
         "label":            "Matrix",
-        "color_pairs":      [18, 19, 20],
-        "glow_pair":        22,
+        "color_pairs":      [209, 210, 211],
+        "glow_pair":        212,
         "glow_char":        "▄",
         "density":          0.06,
         "particle_chars":   ["0", "1", "│", "┃", "╎", "╏", "▓", "░", "▒"],
@@ -155,8 +158,8 @@ SKY_THEMES = {
     },
     "sunset": {
         "label":            "Sunset",
-        "color_pairs":      [23, 24, 25],
-        "glow_pair":        26,
+        "color_pairs":      [213, 214, 215],
+        "glow_pair":        216,
         "glow_char":        "▀",
         "density":          0.025,
         "particle_chars":   ["~", "≈", "─", "∼", "⌒", "v", "ʌ"],
@@ -165,8 +168,8 @@ SKY_THEMES = {
     },
     "rainy day": {
         "label":            "Rainy Day",
-        "color_pairs":      [27, 28, 29],
-        "glow_pair":        30,
+        "color_pairs":      [217, 218, 219],
+        "glow_pair":        220,
         "glow_char":        "░",
         "density":          0.07,
         "particle_chars":   ["│", "╎", "╏", "┊", "┋", "·", "╷"],
@@ -178,9 +181,9 @@ SKY_THEMES = {
 GROUND_THEMES = {
     "city": {
         "label":          "City Skyscrapers",
-        "color_pair":     8,
+        "color_pair":     221,
         "accent_pair":    3,
-        "highlight_pair": 11,
+        "highlight_pair": 222,
         "detail_fn":      "city_windows",
         "tallest":        25,
         "buildings": [
@@ -203,9 +206,9 @@ GROUND_THEMES = {
     },
     "beach": {
         "label":          "Beach",
-        "color_pair":     31,
-        "accent_pair":    32,
-        "highlight_pair": 33,
+        "color_pair":     223,
+        "accent_pair":    224,
+        "highlight_pair": 225,
         "detail_fn":      "beach_surf",
         "tallest":        9,
         "layers": [
@@ -225,9 +228,9 @@ GROUND_THEMES = {
     },
     "forest": {
         "label":          "Forest",
-        "color_pair":     34,
-        "accent_pair":    35,
-        "highlight_pair": 36,
+        "color_pair":     226,
+        "accent_pair":    227,
+        "highlight_pair": 228,
         "detail_fn":      "forest_canopy",
         "tallest":        18,
         "layers": [
@@ -241,9 +244,9 @@ GROUND_THEMES = {
     },
     "ranch": {
         "label":          "Ranch",
-        "color_pair":     37,
-        "accent_pair":    38,
-        "highlight_pair": 39,
+        "color_pair":     229,
+        "accent_pair":    230,
+        "highlight_pair": 231,
         "detail_fn":      "ranch_fence",
         "tallest":        10,
         "layers": [
@@ -258,9 +261,9 @@ GROUND_THEMES = {
     },
     "ocean": {
         "label":          "Ocean",
-        "color_pair":     40,
-        "accent_pair":    41,
-        "highlight_pair": 42,
+        "color_pair":     232,
+        "accent_pair":    233,
+        "highlight_pair": 234,
         "detail_fn":      "ocean_waves",
         "tallest":        10,
         "layers": [
@@ -301,17 +304,18 @@ class BackgroundEngine:
         self.frame = 0
         self.user_image_path = user_image_path
         self.user_image_palette = []
+        self.load_error = None
 
         self.mode = mode if mode in ("layered", "scene") else "layered"
         self._set_sky(sky_theme)
         self._set_ground(ground_theme)
         self._set_scene(scene_theme)
-        self._init_colors()
+        self.init_bg_colors()
         self._generate()
 
     # ── Color initialisation ───────────────────────────────────────────────
 
-    def _init_colors(self):
+    def init_bg_colors(self):
         """
         Register curses color pairs for the active scene palette.
         Must be called after curses.start_color() has been called (UIEngine
@@ -326,6 +330,10 @@ class BackgroundEngine:
         This only registers pairs for the *currently active scene* — no
         wasted slots from scenes you're not using.
         """
+        
+        curses.init_pair(235, curses.COLOR_WHITE, curses.COLOR_BLACK) # Fixed Background Pair
+        self.BG_ATTR = curses.color_pair(235)
+        
         if self.mode != "scene":
             return
 
@@ -375,7 +383,7 @@ class BackgroundEngine:
 
     def set_scene(self, name):
         self._set_scene(name)
-        self._init_colors()
+        self.init_bg_colors()
         self._generate()
 
     def set_user_image_path(self, path):
@@ -386,7 +394,7 @@ class BackgroundEngine:
     def set_mode(self, mode):
         if mode in ("layered", "scene"):
             self.mode = mode
-            self._init_colors()
+            self.init_bg_colors()
             self._generate()
 
     def set_sky_enabled(self, v):    self.sky_enabled = v
@@ -564,6 +572,14 @@ class BackgroundEngine:
             return
         
         try:
+            import sys
+            from pathlib import Path
+            
+            # Find the project root by going up from this file's directory
+            project_root = Path(__file__).resolve().parent.parent.parent
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            
             from files.image_process import process_image_for_terminal
             img, palette = process_image_for_terminal(
                 self.user_image_path,
@@ -590,6 +606,7 @@ class BackgroundEngine:
                     self.fb[py+1, px:px+2] = 1   # Bottom half on (foreground character shows)
                     
         except Exception as e:
+            self.load_error = str(e)
             self.fb.fill(0)
             self.cb.fill(0)
 
@@ -1059,6 +1076,6 @@ class BackgroundEngine:
 
     def handle_resize(self):
         self.max_y, self.max_x = self.stdscr.getmaxyx()
-        self._init_colors()   # re-register pairs in case terminal changed
+        self.init_bg_colors()   # re-register pairs in case terminal changed
         self._generate()
         self.frame = 0
