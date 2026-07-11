@@ -1,12 +1,54 @@
 
 
 import os
+import shutil
 
 class Navigator:
     def __init__(self, start_path=None):
         self.current_path = os.getcwd() if start_path is None else start_path
         self.history = [self.current_path]
-        self.show_hidden = False          # toggled by '.' key
+        self.show_hidden = False  
+
+        self.clipboard_path = None
+        self.clipboard_mode = None   
+        
+    def set_clipboard(self, path, mode):
+        """Stores the target file path and operation type."""
+        self.clipboard_path = path
+        self.clipboard_mode = mode
+
+    def execute_paste(self):
+        """Executes the copy or move operation into the current directory."""
+        if not self.clipboard_path or not os.path.exists(self.clipboard_path):
+            return {"success": False, "error": "Nothing in clipboard or file missing."}
+
+        src = self.clipboard_path
+        filename = os.path.basename(src)
+        dest = os.path.join(self.current_path, filename)
+
+        if os.path.exists(dest):
+            return {"success": False, "error": f"File '{filename}' already exists here."}
+
+        try:
+            if self.clipboard_mode == "copy":
+                # copytree handles folders, copy2 handles files (and preserves metadata)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dest)
+                else:
+                    shutil.copy2(src, dest)
+                return {"success": True, "error": f"Copied '{filename}' successfully."}
+                
+            elif self.clipboard_mode == "cut":
+                shutil.move(src, dest)
+                # Clear the clipboard after a successful cut so it can't be pasted twice
+                self.clipboard_path = None 
+                self.clipboard_mode = None
+                return {"success": True, "error": f"Moved '{filename}' successfully."}
+                
+        except PermissionError:
+            return {"success": False, "error": "Permission denied."}
+        except Exception as e:
+            return {"success": False, "error": str(e)}# toggled by '.' key
 
     def get_current_path(self):
         return self.current_path

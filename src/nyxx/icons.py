@@ -6,9 +6,9 @@ import os
 EXT_ICONS = {
     # Python / scripting
     ".py":   "🐍",
-    ".sh":   "⚙️",
-    ".ps1":  "⚙️",
-    ".bash": "⚙️",
+    ".sh":   "💿",
+    ".ps1":  "💿",
+    ".bash": "💿️",
     # Markup / docs
     ".md":   "📝",
     ".txt":  "📄",
@@ -30,11 +30,11 @@ EXT_ICONS = {
     ".jsx":  "🟨",
     ".tsx":  "🟦",
     # Images
-    ".png":  "🖼️",
-    ".jpg":  "🖼️",
-    ".jpeg": "🖼️",
-    ".gif":  "🖼️",
-    ".svg":  "🖼️",
+    ".png":  "📸",
+    ".jpg":  "📸",
+    ".jpeg": "📸",
+    ".gif":  "📸",
+    ".svg":  "📸",
     # Archives
     ".zip":  "📦",
     ".tar":  "📦",

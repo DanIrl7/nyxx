@@ -1,0 +1,9 @@
+2026-07-10 15:13:44,047 - DEBUG - Importing JpegImagePlugin
+2026-07-10 15:13:54,548 - DEBUG - Copy/Cut action triggered: copy_item
+2026-07-10 15:13:54,548 - DEBUG - Target file identified: C:\Users\t430\3D Objects\coding\projects\Nyxx\nyxx-backgrounds.html
+2026-07-10 15:14:00,537 - DEBUG - Paste action triggered.
+2026-07-10 15:14:00,538 - DEBUG - Paste result: {'success': False, 'error': "File 'nyxx-backgrounds.html' already exists here."}
+2026-07-10 15:14:14,179 - DEBUG - Paste action triggered.
+2026-07-10 15:14:14,263 - DEBUG - Paste result: {'success': True, 'error': "Copied 'nyxx-backgrounds.html' successfully."}
+2026-07-10 15:14:28,890 - DEBUG - Copy/Cut action triggered: cut_item
+2026-07-10 15:14:28,891 - DEBUG - Target file identified: C:\Users\t430\3D Objects\coding\projects\Nyxx\files\nyxx-backgrounds.html

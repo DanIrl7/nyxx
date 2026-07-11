@@ -2,6 +2,7 @@ import curses
 import pyfiglet
 import os
 from .config import get as config_get, set as config_set
+import time
 
 
 class UIEngine:
@@ -229,6 +230,9 @@ class UIEngine:
         elif key == curses.KEY_DOWN or key == ord("j") or key == 456: return "down"
         elif key == curses.KEY_LEFT or key == ord("h") or key == curses.KEY_BACKSPACE or key == ord('\b') or key == 452: return "back"
         elif key == curses.KEY_RIGHT or key == ord("l") or key == ord('\n') or key == 454: return "enter"
+        elif key == ord('c'): return "copy_item"
+        elif key == ord('x'): return "cut_item"
+        elif key == ord('v'): return "paste_item"
         elif key == ord(' '): return "confirm"
         elif key == ord('.'): return "toggle_hidden"
         elif key == ord('z'): return "help"
@@ -275,6 +279,7 @@ class UIEngine:
 
     def draw_cd_panel(self, current_path, items, full_paths, show_hidden):
         from .icons import get_icon
+        curses.curs_set(0)
         max_y, max_x = self.stdscr.getmaxyx()
         panel_w = min(60, max_x - 4)
         panel_h = min(22, max_y - 4)
@@ -310,7 +315,7 @@ class UIEngine:
             self.stdscr.addstr(panel_y + 2, panel_x, div, curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
-        list_rows = panel_h - 7
+        list_rows = panel_h - 9
         list_y    = panel_y + 3
         half = list_rows // 2
         scroll = max(0, min(self.selection_index - half, len(items) - list_rows))
@@ -328,7 +333,7 @@ class UIEngine:
             max_name = panel_w - 8   
             display_name = self._truncate(name, max_name)
             row_y = list_y + i
-            if row_y >= panel_y + panel_h - 4:
+            if row_y >= panel_y + panel_h - 6:
                 break
 
             if selected:
@@ -359,7 +364,7 @@ class UIEngine:
                     self.stdscr.addstr(list_y + row, sb_x, char, curses.color_pair(self.BORDER_PAIR))
                 except curses.error: pass
 
-        preview_y = panel_y + panel_h - 4
+        preview_y = panel_y + panel_h - 6
         div2 = "╠" + "═" * (panel_w - 2) + "╢"
         try:
             self.stdscr.addstr(preview_y, panel_x, div2, curses.color_pair(self.BORDER_PAIR))
@@ -377,17 +382,24 @@ class UIEngine:
 
         div3 = "╠" + "═" * (panel_w - 2) + "╢"
         try:
-            self.stdscr.addstr(panel_y + panel_h - 2, panel_x, div3, curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(panel_y + panel_h - 4, panel_x, div3, curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
-
+        
         hidden_hint = ". show-hidden" if not show_hidden else ". hide-hidden"
-        footer = f"↑↓ move  → enter  ← back  SPC jump  {hidden_hint}  q quit"
-        footer = self._truncate(footer, inner_w)
+        footer_line1 = "[↑↓ move]   [→ enter]  [← back]  [z hint]"
+        footer_line2 = f" [SPC jump]   {hidden_hint}   [q quit]"
+        
         try:
-            self.stdscr.addstr(panel_y + panel_h - 1, panel_x + 1, footer.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
+            self.stdscr.addstr(panel_y + panel_h - 3, panel_x + 1, footer_line1.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
+        except curses.error: pass
+        
+        # Draw line 2 at row -2
+        try:
+            self.stdscr.addstr(panel_y + panel_h - 2, panel_x + 1, footer_line2.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
         except curses.error: pass
 
     def draw_jump_panel(self, jumps, confirm_delete=False):
+        curses.curs_set(0)
         max_y, max_x = self.stdscr.getmaxyx()
         panel_w = min(60, max_x - 4)
         panel_h = min(18, max_y - 4)
@@ -430,7 +442,7 @@ class UIEngine:
             except curses.error: pass
 
         list_start_row = start_y + 3
-        footer_row     = start_y + panel_h - 3
+        footer_row     = start_y + panel_h 
         available_rows = footer_row - list_start_row          
         rows_per_entry = 2
         viewport_entries = max(1, available_rows // rows_per_entry)
@@ -479,6 +491,7 @@ class UIEngine:
             except curses.error: pass
 
     def draw_memo_panel(self, memos, confirm_delete=False):
+        curses.curs_set(0)
         max_y, max_x = self.stdscr.getmaxyx()
         panel_w = min(60, max_x - 4)
         panel_h = min(18, max_y - 4)
@@ -571,6 +584,7 @@ class UIEngine:
         
     def draw_help_panel(self):
         max_y, max_x = self.stdscr.getmaxyx()
+        curses.curs_set(0)
         panel_w = min(60, max_x - 4)
         panel_h = min(21, max_y - 4)
         start_y = (max_y - panel_h) // 2
@@ -642,6 +656,7 @@ class UIEngine:
 
     def draw_panel(self, lines, footer_lines=None):
         padding_x = 3
+        curses.curs_set(0)
         padding_y = 1
         all_lines = lines + (footer_lines or [])
         content_width = max(len(l) for l in all_lines) if all_lines else 20
@@ -706,7 +721,7 @@ class UIEngine:
 
         if scene_names is None: scene_names = []
         if active_scene is None: active_scene = ""
-        
+        curses.curs_set(0)
         max_y, max_x = self.stdscr.getmaxyx()
         panel_w = min(60, max_x - 4)
         panel_h = min(18, max_y - 4)
@@ -841,6 +856,7 @@ class UIEngine:
         if getattr(self, "error_message", None):
                 self.stdscr.addstr(max_y - 2, 0, f" Error: {self.error_message} ".ljust(max_x), curses.color_pair(self.YELLOW) | curses.A_BOLD)
     def draw_home(self, items, logo_enabled=True):
+        curses.curs_set(0)
         if logo_enabled:
             logo_lines = self.get_logo_lines()
             logo_colors = [self.PANEL_PAIR] * len(logo_lines)
@@ -866,13 +882,13 @@ class UIEngine:
             parts = item.split(" - ", 1)
             name = parts[0].strip()
             desc = parts[1].strip() if len(parts) > 1 else ""
-            prefix = "▸ " if i == self.selection_index else "  "
+            prefix = "⫸ " if i == self.selection_index else "  "
             menu_lines.append(f"{prefix}{name:<8}  {desc}")
 
-        footer_lines = ["↑↓ Navigate   Enter Select   q Quit"]
+        footer_lines = ["↑↓:Navigate  z:Help  Enter:Select  q:Quit"]
         panel_y, panel_x, panel_w = self.draw_panel(menu_lines, footer_lines)
 
-        padding_x = 3
+        padding_x = 4
         selected_row = panel_y + 2 + self.selection_index  
         selected_line = menu_lines[self.selection_index]
         try:
@@ -880,6 +896,7 @@ class UIEngine:
         except curses.error: pass
 
     def draw_ui(self, current_path, items, logo_enabled=True):
+        curses.curs_set(0)
         if current_path == "Nyxx Home":
             self.draw_home(items, logo_enabled=logo_enabled)
             return

@@ -16,6 +16,14 @@ from .background import (
 from .jumpstore import list_jumps, delete_jump, add_jump
 from .memostore import list_memos, delete_memo, add_memo
 from .config import get as config_get, set as config_set
+import logging
+
+# This creates a file 'nyxx_debug.log' in the same folder where you run the script
+logging.basicConfig(
+    filename='nyxx_debug.log', 
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 
 def _pick_image_file(initial_path=""):
@@ -218,7 +226,7 @@ def main(stdscr, initial_state="home"):
         # -------------------------------
 
         action = ui.get_input()
-
+        
         if action == "resize":
             ui.max_y, ui.max_x = stdscr.getmaxyx()
             bg_engine.handle_resize()
@@ -265,6 +273,23 @@ def main(stdscr, initial_state="home"):
             elif action == "toggle_hidden":
                 navigator.show_hidden = not navigator.show_hidden
                 ui.selection_index = 0
+            elif action in ("copy_item", "cut_item"):
+                logging.debug(f"Copy/Cut action triggered: {action}")
+                if items and items[ui.selection_index] != "..":
+                    target_path = full_paths[ui.selection_index]
+                    logging.debug(f"Target file identified: {target_path}")
+                    mode = "copy" if action == "copy_item" else "cut"
+                    navigator.set_clipboard(target_path, mode)
+                    
+                else:
+                    logging.warning("User attempted to copy/cut the '..' parent directory shortcut.")
+
+            elif action == "paste_item":
+                logging.debug("Paste action triggered.")
+                result = navigator.execute_paste()
+                logging.debug(f"Paste result: {result}")
+                ui.error_message = result["error"]
+            
             elif action == "enter":
                 if items:
                     result = navigator.go_forward(items[ui.selection_index])
@@ -282,6 +307,7 @@ def main(stdscr, initial_state="home"):
                     running = False
             elif action == "back":
                 state = "home"
+                ui.selection_index = 0
 
         elif state in ("jump", "memo"):
             data = jumps if state == "jump" else memos
