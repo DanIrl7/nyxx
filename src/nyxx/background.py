@@ -2,6 +2,7 @@ import curses
 import random
 import math
 import numpy as np
+from pathlib import Path
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -106,21 +107,48 @@ VAPORWAVE_PALETTE_8 = [
 # build_fn: which _build_*() method to call to populate the framebuffer.
 # palette_256: list of (r,g,b) entries (0–1000 scale) for 256-color mode.
 # palette_8:   list of standard curses COLOR_* constants for 8-color fallback.
-# ══════════════════════════════════════════════════════════════════════════════
-SCENE_THEMES = {
-    "vaporwave sunset": {
-        "label":       "Vaporwave Sunset",
-        "build_fn":    "vaporwave_sunset",
-        "palette_256": VAPORWAVE_PALETTE_256,
-        "palette_8":   VAPORWAVE_PALETTE_8,
-    },
-    "user image": {
-        "label":       "Custom Image",
-        "build_fn":    "user_image",
-        "palette_256": [],
-        "palette_8":   [],
-    },
-}
+# ══════════════════════════════════════════════════════════════════════════════def load_scene_themes():
+def load_scene_themes():
+        themes = {
+            # Keep the native file picker as the first option
+            "user image": {
+                "label": "Browse File...",
+                "build_fn": "user_image",
+                "palette_256": [],
+                "palette_8": [],
+            }
+        }
+        
+        # 1. Resolve the path to a new 'assets/backgrounds' folder in your project root
+        try:
+            project_root = Path(__file__).resolve().parent.parent.parent
+            bg_dir = project_root / "assets" / "backgrounds"
+            
+            # Auto-create the folder if it doesn't exist yet
+            bg_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 2. Scan the folder for any image files
+            for ext in ('*.png', '*.jpg', '*.jpeg', '*.webp', '*.bmp'):
+                for img_path in bg_dir.glob(ext):
+                    # Use the filename (without extension) as the scene name
+                    scene_name = img_path.stem.lower()
+                    
+                    themes[scene_name] = {
+                        "label": img_path.stem.replace("_", " ").title(),
+                        "build_fn": "user_image",         # Reuse your existing image renderer
+                        "image_path": str(img_path),      # Store the path
+                        "palette_256": [],
+                        "palette_8": []
+                    }
+        except Exception:
+            pass
+        
+        return themes
+
+
+
+
+SCENE_THEMES = load_scene_themes()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LAYERED THEME REGISTRIES (sky + ground — unchanged from before)
@@ -371,7 +399,14 @@ class BackgroundEngine:
 
     def _set_scene(self, name):
         self.scene_name  = name
-        self.scene_theme = SCENE_THEMES.get(name, SCENE_THEMES["vaporwave sunset"])
+        # Default to the first available theme if something goes wrong
+        fallback = list(SCENE_THEMES.keys())[0]
+        self.scene_theme = SCENE_THEMES.get(name, SCENE_THEMES[fallback])
+        
+        # IMPORTANT: If this scene has a predefined path from the folder, 
+        # override the user_image_path so _build_user_image() renders it.
+        if "image_path" in self.scene_theme:
+            self.user_image_path = self.scene_theme["image_path"]
 
     def set_sky(self, name):
         self._set_sky(name)
@@ -566,9 +601,9 @@ class BackgroundEngine:
 
     def _build_user_image(self, rows, cols):
         """Load and render a user-selected image using the half-block matrix rule."""
+        self.fb.fill(0)
+        self.cb.fill(0)
         if not self.user_image_path:
-            self.fb.fill(0)
-            self.cb.fill(0)
             return
         
         try:
@@ -581,29 +616,39 @@ class BackgroundEngine:
                 sys.path.insert(0, str(project_root))
             
             from files.image_process import process_image_for_terminal
-            img, palette = process_image_for_terminal(
-                self.user_image_path,
-                target_cols=cols,
-                target_lines=rows,
-                palette_size=14,
-            )
+            cache_key = (self.user_image_path, cols, rows)
+            if getattr(self, "_img_cache_key", None) != cache_key:
+                self._cached_palette_key = None
+                img, palette = process_image_for_terminal(
+                    self.user_image_path,
+                    target_cols=cols,
+                    target_lines=rows,
+                    palette_size=14,
+                )
+                self._cached_img     = img
+                self._cached_palette = palette
+                self._img_cache_key  = cache_key
+            else:
+                img     = self._cached_img
+                palette = self._cached_palette
             self.user_image_palette = palette
             
             # Register the full 196 combination matrix
-            self._register_user_image_combinations(palette)
+            palette_key = tuple(tuple(c) for c in palette)
+            if getattr(self, "_cached_palette_key", None) != palette_key:
+                self._register_user_image_combinations(palette)
+                self._cached_palette_key = palette_key
             
-            for y in range(rows):
-                for x in range(cols):
-                    top_idx = img.getpixel((x, y * 2))
-                    bottom_idx = img.getpixel((x, y * 2 + 1))
-                    
-                    # Store the unique 2D pair ID (0 to 195) in the color buffer
-                    self.cb[y, x] = (top_idx * 14) + bottom_idx
-                    
-                    # Force the framebuffer values to calculate out to 3 ("▄")
-                    py, px = y * 2, x * 2
-                    self.fb[py, px:px+2] = 0     # Top half off (background color takes over)
-                    self.fb[py+1, px:px+2] = 1   # Bottom half on (foreground character shows)
+            px_array = np.array(img, dtype=np.uint8)   # shape (rows*2, cols)
+
+            top_pixels    = px_array[0::2, :]           # even rows = top half of ▄
+            bottom_pixels = px_array[1::2, :]           # odd rows  = bottom half of ▄
+
+            self.cb[:rows, :cols] = (top_pixels[:rows] * 14 + bottom_pixels[:rows]).astype(np.uint8)
+
+            # fb: top half always off (bg), bottom half always on (fg)
+            self.fb[0::2, :] = 0
+            self.fb[1::2, :] = 1
                     
         except Exception as e:
             self.load_error = str(e)
@@ -690,50 +735,42 @@ class BackgroundEngine:
     # ══════════════════════════════════════════════════════════════════════
 
     def _blit_scene(self):
-        """
-        Read self.fb and self.cb, output one addstr call per terminal cell.
-
-        For each cell (row, col):
-          1. Extract the 2×2 pixel block from self.fb.
-          2. Encode as 4-bit integer: TL*8 + TR*4 + BL*2 + BR*1.
-          3. Look up the glyph in QUAD_PIXEL_DICT.
-          4. Look up the color pair from self.cb[row, col].
-          5. Call stdscr.addstr(row, col, glyph, color_pair).
-
-        The entire encoding step is vectorised with numpy before the loop,
-        so the Python loop only does terminal I/O — the math is in C.
-        """
         rows, cols = self.max_y, self.max_x
-        rows = min(rows, self.fb.shape[0] // 2)
-        cols = min(cols, self.fb.shape[1] // 2)
+        rows = min(rows - 1, self.fb.shape[0] // 2)  # -1 avoids bottom-right curses error
+        cols = min(cols - 1, self.fb.shape[1] // 2)
 
-        # Extract the four sub-pixel planes from the framebuffer.
-        # fb has shape (rows*2, cols*2). Stride-slice to get each corner.
-        TL = self.fb[0::2, 0::2][:rows, :cols]   # even row, even col
-        TR = self.fb[0::2, 1::2][:rows, :cols]   # even row, odd  col
-        BL = self.fb[1::2, 0::2][:rows, :cols]   # odd  row, even col
-        BR = self.fb[1::2, 1::2][:rows, :cols]   # odd  row, odd  col
+        # ── Vectorised quad-pixel encoding ─────────────────────────────
+        TL = self.fb[0::2, 0::2][:rows, :cols]
+        TR = self.fb[0::2, 1::2][:rows, :cols]
+        BL = self.fb[1::2, 0::2][:rows, :cols]
+        BR = self.fb[1::2, 1::2][:rows, :cols]
+        quad_idx = (TL * 8 + TR * 4 + BL * 2 + BR).astype(np.uint8)
 
-        # Encode as 4-bit index.  All four planes are uint8 (0 or 1).
-        quad_idx = (TL.astype(np.uint8) * 8 +
-                    TR.astype(np.uint8) * 4 +
-                    BL.astype(np.uint8) * 2 +
-                    BR.astype(np.uint8))           # shape (rows, cols), values 0–15
-
-        # Color buffer slice to match clamped dimensions.
         cb_slice = self.cb[:rows, :cols]
 
+        # ── Precompute per-row string buffers ───────────────────────────
+        # Build a lookup: pair_id → curses attr integer (computed once, not per cell)
+        # Max pair index in cb is 14*14-1 = 195, so pair_ids run BASE_PAIR to BASE_PAIR+195
         bold_flags = getattr(self, "_pair_bold_flags", {})
+        max_pair_idx = int(cb_slice.max()) + 1 if cb_slice.size > 0 else 1
+        attr_cache = {}
+        for idx in range(max_pair_idx):
+            pid = BASE_PAIR + idx
+            a = curses.color_pair(pid)
+            if bold_flags.get(pid, False):
+                a |= curses.A_BOLD
+            attr_cache[idx] = a
+
+        # ── Terminal I/O loop — Python overhead here is unavoidable ────
+        addstr = self.stdscr.addstr   # local binding avoids attribute lookup per call
+        glyph_lut = QUAD_PIXEL_DICT   # local binding
 
         for r in range(rows):
+            row_quad = quad_idx[r]
+            row_cb   = cb_slice[r]
             for c in range(cols):
-                glyph   = QUAD_PIXEL_DICT[quad_idx[r, c]]
-                pair_id = BASE_PAIR + int(cb_slice[r, c])
-                attr    = curses.color_pair(pair_id)
-                if bold_flags.get(pair_id, False):
-                    attr |= curses.A_BOLD
                 try:
-                    self.stdscr.addstr(r, c, glyph, attr)
+                    addstr(r, c, glyph_lut[row_quad[c]], attr_cache[row_cb[c]])
                 except curses.error:
                     pass
 

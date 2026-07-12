@@ -91,7 +91,7 @@ def main(stdscr, initial_state="home"):
 
     sky_theme = config_get("sky_theme")
     ground_theme = config_get("ground_theme")
-    scene_theme = config_get("scene_theme") or "vaporwave sunset"
+    scene_theme = config_get("scene_theme") or "user image"
     ui_theme = config_get("ui_theme") 
 
     # Immediately apply the user's UI layout

@@ -93,6 +93,19 @@ class UIEngine:
         self.PANEL_PAIR = 5
         self.BORDER_PAIR = 6
         self.PANEL_HINT_PAIR = 7
+        
+        _vw8 = [
+            curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
+            curses.COLOR_CYAN, curses.COLOR_CYAN, curses.COLOR_CYAN,
+            curses.COLOR_MAGENTA, curses.COLOR_MAGENTA, curses.COLOR_MAGENTA,
+            curses.COLOR_MAGENTA, curses.COLOR_RED,     curses.COLOR_RED,
+            curses.COLOR_YELLOW,  curses.COLOR_YELLOW,  curses.COLOR_YELLOW,
+            curses.COLOR_WHITE,   curses.COLOR_WHITE,   curses.COLOR_WHITE,
+            curses.COLOR_BLUE,    curses.COLOR_CYAN,    curses.COLOR_MAGENTA,
+            curses.COLOR_BLUE,    curses.COLOR_BLUE,    curses.COLOR_BLUE,
+        ]
+        for _i, _c in enumerate(_vw8):
+            curses.init_pair(8 + _i, _c, curses.COLOR_BLACK)
 
         def _resolve_color(conf, default=curses.COLOR_CYAN):
             """Accept int (curses code) or string (color name), return validated int."""
@@ -186,21 +199,6 @@ class UIEngine:
         # ══ Fixed background ══
         curses.init_pair(235, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # BG_ATTR fallback
 
-        active_mode  = config_get("bg_mode") or "layered"
-        active_scene = config_get("scene_theme") or ""
-        if not (active_mode == "scene" and active_scene == "user image"):
-            _vw8 = [
-                curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
-                curses.COLOR_CYAN, curses.COLOR_CYAN, curses.COLOR_CYAN,
-                curses.COLOR_MAGENTA, curses.COLOR_MAGENTA, curses.COLOR_MAGENTA,
-                curses.COLOR_MAGENTA, curses.COLOR_RED,     curses.COLOR_RED,
-                curses.COLOR_YELLOW,  curses.COLOR_YELLOW,  curses.COLOR_YELLOW,
-                curses.COLOR_WHITE,   curses.COLOR_WHITE,   curses.COLOR_WHITE,
-                curses.COLOR_BLUE,    curses.COLOR_CYAN,    curses.COLOR_MAGENTA,
-                curses.COLOR_BLUE,    curses.COLOR_BLUE,    curses.COLOR_BLUE,
-            ]
-            for _i, _c in enumerate(_vw8):
-                curses.init_pair(8 + _i, _c, curses.COLOR_BLACK)
 
         self.error_message = None
         
