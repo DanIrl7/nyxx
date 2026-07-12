@@ -4,10 +4,7 @@ import os
 from .config import get as config_get, set as config_set
 import time
 
-
 class UIEngine:
-    
-    # Pre-configured themes mapping borders, text, highlights, hints, and panel backgrounds
     UI_THEMES = {
         "cyber cyan": {
             "border": curses.COLOR_CYAN,
@@ -72,7 +69,6 @@ class UIEngine:
         self.selection_index = 0
         self.scroll_position = 0
 
-        # Local name->curses constant map (exposed as self.COLOR_MAP for other code)
         name_map = {
             "BLACK": curses.COLOR_BLACK,
             "RED": curses.COLOR_RED,
@@ -85,7 +81,6 @@ class UIEngine:
         }
         self.COLOR_MAP = name_map
 
-        # Define pair IDs
         self.WHITE = 1
         self.CYAN = 2
         self.YELLOW = 3
@@ -107,24 +102,10 @@ class UIEngine:
         for _i, _c in enumerate(_vw8):
             curses.init_pair(8 + _i, _c, curses.COLOR_BLACK)
 
-        def _resolve_color(conf, default=curses.COLOR_CYAN):
-            """Accept int (curses code) or string (color name), return validated int."""
-            if isinstance(conf, int):
-                return conf
-            if isinstance(conf, str):
-                return name_map.get(conf.upper(), default)
-            return default
-
-        # 2. Load and Apply Theme First
-        # This sets the theme-specific colors (WHITE, CYAN, etc.)
         self.apply_ui_theme(config_get("ui_theme") or "cyber cyan")
-
-        # 3. Apply User Overrides Second
-        # This "layers" your custom panel/border picks on top of the theme.
         self.refresh_custom_colors()
 
     def refresh_custom_colors(self):
-        """Updates the core pairs, falling back to the active theme if no custom color is set."""
         p_bg_name = config_get("panel_color")
         text_col_name = config_get("text_color")
         hl_bg_name = config_get("highlight_panel_color")
@@ -139,78 +120,33 @@ class UIEngine:
                 return self.COLOR_MAP.get(val.upper(), default)
             return default
 
-        # 2. Dynamically inject config values into the 'custom' theme
         self.UI_THEMES["custom"] = {
             "bg": _resolve(p_bg_name, curses.COLOR_BLACK),
             "text": _resolve(text_col_name, curses.COLOR_WHITE),
             "highlight": _resolve(hl_bg_name, curses.COLOR_CYAN),
-            "hint": curses.COLOR_YELLOW, # You can make this customizable too if desired
+            "hint": curses.COLOR_YELLOW, 
             "border": _resolve(b_fg_name, curses.COLOR_WHITE),
             "hl_fg": _resolve(hl_fg_name, curses.COLOR_BLACK),
             "b_bg": _resolve(b_bg_name, curses.COLOR_BLACK)
         }
 
-        # 3. Get the currently active theme (defaults to cyber cyan)
         theme_name = config_get("ui_theme") or "cyber cyan"
         theme = self.UI_THEMES.get(theme_name, self.UI_THEMES["cyber cyan"])
         
-        # 4. Apply the pairs using the active theme's specs
         curses.init_pair(self.PANEL_PAIR, theme["text"], theme["bg"])
         curses.init_pair(self.BORDER_PAIR, theme["border"], theme.get("b_bg", curses.COLOR_BLACK))
         curses.init_pair(self.SELECTION, theme.get("hl_fg", curses.COLOR_BLACK), theme["highlight"])
         curses.init_pair(self.PANEL_HINT_PAIR, theme["hint"], theme["bg"])
 
-
-        # Layered-theme background pairs (204–235)
-        # These live above the scene-renderer range (8–203) to avoid collisions.
-        # ══ Sky theme pairs ══
-        curses.init_pair(204, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # starry night glow
-        curses.init_pair(205, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # vaporwave cp[0]
-        curses.init_pair(206, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # vaporwave cp[1]
-        curses.init_pair(207, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # vaporwave cp[2]
-        curses.init_pair(208, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # vaporwave glow
-        curses.init_pair(209, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # matrix cp[0]
-        curses.init_pair(210, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # matrix cp[1]
-        curses.init_pair(211, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # matrix cp[2]
-        curses.init_pair(212, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # matrix glow
-        curses.init_pair(213, curses.COLOR_RED,     curses.COLOR_BLACK)  # sunset cp[0]
-        curses.init_pair(214, curses.COLOR_YELLOW,  curses.COLOR_BLACK)  # sunset cp[1]
-        curses.init_pair(215, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # sunset cp[2]
-        curses.init_pair(216, curses.COLOR_RED,     curses.COLOR_BLACK)  # sunset glow
-        curses.init_pair(217, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # rainy day cp[0]
-        curses.init_pair(218, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # rainy day cp[1]
-        curses.init_pair(219, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # rainy day cp[2]
-        curses.init_pair(220, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # rainy day glow
-        # ══ Ground theme pairs ══
-        curses.init_pair(221, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # city main
-        curses.init_pair(222, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # city highlight
-        curses.init_pair(223, curses.COLOR_YELLOW,  curses.COLOR_BLACK)  # beach main
-        curses.init_pair(224, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # beach accent
-        curses.init_pair(225, curses.COLOR_CYAN,    curses.COLOR_BLACK)  # beach highlight
-        curses.init_pair(226, curses.COLOR_BLUE,    curses.COLOR_BLACK)  # forest main
-        curses.init_pair(227, curses.COLOR_MAGENTA, curses.COLOR_MAGENTA)# forest accent
-        curses.init_pair(228, curses.COLOR_MAGENTA, curses.COLOR_BLACK)  # forest highlight
-        curses.init_pair(229, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # ranch main
-        curses.init_pair(230, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # ranch accent
-        curses.init_pair(231, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # ranch highlight
-        curses.init_pair(232, curses.COLOR_BLACK,   curses.COLOR_BLACK)  # ocean main
-        curses.init_pair(233, curses.COLOR_GREEN,   curses.COLOR_BLACK)  # ocean accent
-        curses.init_pair(234, curses.COLOR_RED,     curses.COLOR_BLACK)  # ocean highlight
-        # ══ Fixed background ══
-        curses.init_pair(235, curses.COLOR_WHITE,   curses.COLOR_BLACK)  # BG_ATTR fallback
-
-
+        curses.init_pair(235, curses.COLOR_WHITE, curses.COLOR_BLACK)
         self.error_message = None
         
-    
-
     def apply_ui_theme(self, theme_name):
         if theme_name and theme_name in self.UI_THEMES:
             config_set("ui_theme", theme_name)
         self.refresh_custom_colors()
         
     def apply_custom_colors(self, panel_color_name=None, border_color_name=None):
-        """Immediately overrides the active theme with custom user colors from config."""
         self.refresh_custom_colors()
 
     def cleanup(self):
@@ -245,7 +181,6 @@ class UIEngine:
         return self.map_key(key)
     
     def _fill_panel_bg(self, y, x, w, h):
-        """Fills the inside of a panel with spaces using the panel background color pair."""
         for r in range(1, h - 1):
             try:
                 self.stdscr.addstr(y + r, x + 1, " " * (w - 2), curses.color_pair(self.PANEL_PAIR))
@@ -286,7 +221,7 @@ class UIEngine:
 
         self._fill_panel_bg(panel_y, panel_x, panel_w, panel_h)
 
-        top = "╔" + "═" * (panel_w - 2) + "┐"
+        top = "╔" + "═" * (panel_w - 2) + "╗"
         try:
             self.stdscr.addstr(panel_y, panel_x, top, curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
@@ -308,7 +243,7 @@ class UIEngine:
             self.stdscr.addstr(panel_y + 1, panel_x + 2, header, curses.color_pair(self.PANEL_PAIR) | curses.A_BOLD)
         except curses.error: pass
 
-        div = "╠" + "═" * (panel_w - 2) + "╢"
+        div = "╠" + "═" * (panel_w - 2) + "╣"
         try:
             self.stdscr.addstr(panel_y + 2, panel_x, div, curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
@@ -363,7 +298,7 @@ class UIEngine:
                 except curses.error: pass
 
         preview_y = panel_y + panel_h - 6
-        div2 = "╠" + "═" * (panel_w - 2) + "╢"
+        div2 = "╠" + "═" * (panel_w - 2) + "╣"
         try:
             self.stdscr.addstr(preview_y, panel_x, div2, curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
@@ -378,7 +313,7 @@ class UIEngine:
             self.stdscr.addstr(preview_y + 1, panel_x + 2, preview_text.ljust(inner_w - 2), curses.color_pair(self.PANEL_HINT_PAIR))
         except curses.error: pass
 
-        div3 = "╠" + "═" * (panel_w - 2) + "╢"
+        div3 = "╠" + "═" * (panel_w - 2) + "╣"
         try:
             self.stdscr.addstr(panel_y + panel_h - 4, panel_x, div3, curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
@@ -389,10 +324,6 @@ class UIEngine:
         
         try:
             self.stdscr.addstr(panel_y + panel_h - 3, panel_x + 1, footer_line1.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
-        except curses.error: pass
-        
-        # Draw line 2 at row -2
-        try:
             self.stdscr.addstr(panel_y + panel_h - 2, panel_x + 1, footer_line2.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
         except curses.error: pass
 
@@ -407,85 +338,93 @@ class UIEngine:
         self._fill_panel_bg(start_y, start_x, panel_w, panel_h)
 
         try:
-            self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "┐", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "╗", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
         for r in range(1, panel_h - 1):
             try:
-                self.stdscr.addstr(start_y + r, start_x, "║", curses.color_pair(self.BORDER_PAIR))
+                self.stdscr.addstr(start_y + r, start_x,             "║", curses.color_pair(self.BORDER_PAIR))
                 self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "║", curses.color_pair(self.BORDER_PAIR))
             except curses.error: pass
         try:
             self.stdscr.addstr(start_y + panel_h - 1, start_x, "╚" + "═" * (panel_w - 2) + "╝", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
-        count_str = f"{len(jumps)} saved"
+        count_str  = f"{len(jumps)} saved"
         header_left = " 📌 saved locations"
-        inner_w = panel_w - 2
-        header = header_left.ljust(inner_w - len(count_str)) + count_str
-        header = self._truncate(header, inner_w)
+        inner_w    = panel_w - 2
+        header     = header_left.ljust(inner_w - len(count_str)) + count_str
         try:
-            self.stdscr.addstr(start_y + 1, start_x + 1, header, curses.color_pair(self.PANEL_PAIR))
+            self.stdscr.addstr(start_y + 1, start_x + 1, self._truncate(header, inner_w), curses.color_pair(self.PANEL_PAIR))
         except curses.error: pass
-
         try:
-            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
         if not jumps:
-            empty = " No saved locations yet."
             try:
-                self.stdscr.addstr(start_y + 4, start_x + 1, self._truncate(empty, inner_w).ljust(inner_w), curses.color_pair(self.PANEL_PAIR))
-                hint = " Use 'nyxx jump add' to save a location."
-                self.stdscr.addstr(start_y + 5, start_x + 1, self._truncate(hint, inner_w).ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
+                self.stdscr.addstr(start_y + 4, start_x + 1, self._truncate(" No saved locations yet.", inner_w).ljust(inner_w), curses.color_pair(self.PANEL_PAIR))
+                self.stdscr.addstr(start_y + 5, start_x + 1, self._truncate(" Use 'nyxx jump add' to save a location.", inner_w).ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
 
-        list_start_row = start_y + 3
-        footer_row     = start_y + panel_h 
-        available_rows = footer_row - list_start_row          
-        rows_per_entry = 2
+        # ── List area ──────────────────────────────────────────────────────
+        list_start_row   = start_y + 3
+        footer_row       = start_y + panel_h - 3   # FIX: was panel_h (off by 3)
+        available_rows   = footer_row - list_start_row
+        rows_per_entry   = 2
         viewport_entries = max(1, available_rows // rows_per_entry)
-        scroll = max(0, self.selection_index - (viewport_entries - 1))
+
+        # Centre scroll on selection so items above and below are always visible
+        half   = viewport_entries // 2
+        scroll = max(0, self.selection_index - half)
         scroll = min(scroll, max(0, len(jumps) - viewport_entries))
 
         for slot, ji in enumerate(range(scroll, min(scroll + viewport_entries, len(jumps)))):
-            entry = jumps[ji]
+            entry    = jumps[ji]
             selected = (ji == self.selection_index)
-            row_y = list_start_row + slot * rows_per_entry
-            if row_y >= footer_row: break
+            row_y    = list_start_row + slot * rows_per_entry
+            if row_y >= footer_row:
+                break
 
             indicator = "▸ " if selected else "  "
             name_col  = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_PAIR)
-            name_str = self._truncate(entry.get("name", ""), 12).ljust(12)
-            desc_str = self._truncate(entry.get("desc", ""), inner_w - 16)
-            line1 = f"{indicator}{name_str}  {desc_str}"
-            
+            name_str  = self._truncate(entry.get("name", ""), 12).ljust(12)
+            desc_str  = self._truncate(entry.get("desc", ""), inner_w - 16)
+            line1     = f"{indicator}{name_str}  {desc_str}"
+            path_str  = "    " + self._truncate(entry.get("path", ""), inner_w - 4)
+
             try:
-                if selected:
-                    self.stdscr.addstr(row_y, start_x + 1, " " * inner_w, name_col)
-                    self.stdscr.addstr(row_y + 1, start_x + 1, " " * inner_w, name_col)
-                else:
-                    self.stdscr.addstr(row_y, start_x + 1, " " * inner_w, curses.color_pair(self.PANEL_PAIR))
-                    self.stdscr.addstr(row_y + 1, start_x + 1, " " * inner_w, curses.color_pair(self.PANEL_PAIR))
-                    
-                self.stdscr.addstr(row_y, start_x + 1, self._truncate(line1, inner_w), name_col)
-                path_str = "    " + self._truncate(entry.get("path", ""), inner_w - 4)
-                self.stdscr.addstr(row_y + 1, start_x + 1, path_str.ljust(inner_w)[:inner_w], curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_HINT_PAIR))
+                fill = curses.color_pair(self.PANEL_PAIR)
+                self.stdscr.addstr(row_y,     start_x + 1, " " * inner_w, name_col if selected else fill)
+                self.stdscr.addstr(row_y + 1, start_x + 1, " " * inner_w, name_col if selected else fill)
+                self.stdscr.addstr(row_y,     start_x + 1, self._truncate(line1, inner_w), name_col)
+                self.stdscr.addstr(row_y + 1, start_x + 1, path_str.ljust(inner_w)[:inner_w],
+                                   curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
 
+        # ── Scrollbar ──────────────────────────────────────────────────────
+        if len(jumps) > viewport_entries:
+            sb_x  = start_x + panel_w - 2
+            bar_h = available_rows
+            thumb = int(scroll / max(1, len(jumps) - viewport_entries) * (bar_h - 1))
+            for i in range(bar_h):
+                try:
+                    self.stdscr.addstr(list_start_row + i, sb_x, "█" if i == thumb else "░", curses.color_pair(self.BORDER_PAIR))
+                except curses.error: pass
+
+        # ── Footer ─────────────────────────────────────────────────────────
         try:
-            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
         if confirm_delete:
-            sel_name = jumps[self.selection_index]["name"] if jumps else ""
+            sel_name     = jumps[self.selection_index]["name"] if jumps else ""
             confirm_text = self._truncate(f" Delete '{sel_name}'?  [y] yes   [n] no", inner_w)
             try:
                 self.stdscr.addstr(footer_row + 1, start_x + 1, confirm_text.ljust(inner_w)[:inner_w], curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
         else:
-            footer = " ↑↓ move   Enter jump   d delete   q quit"
             try:
-                self.stdscr.addstr(footer_row + 1, start_x + 1, footer.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
+                self.stdscr.addstr(footer_row + 1, start_x + 1, " ↑↓ move   Enter jump   d delete   q quit".ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
 
     def draw_memo_panel(self, memos, confirm_delete=False):
@@ -495,29 +434,30 @@ class UIEngine:
         panel_h = min(18, max_y - 4)
         start_y = (max_y - panel_h) // 2
         start_x = (max_x - panel_w) // 2
-        inner_w = panel_w - 2
 
         self._fill_panel_bg(start_y, start_x, panel_w, panel_h)
 
         try:
-            self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "┐", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "╗", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
         for r in range(1, panel_h - 1):
             try:
-                self.stdscr.addstr(start_y + r, start_x, "║", curses.color_pair(self.BORDER_PAIR))
+                self.stdscr.addstr(start_y + r, start_x,             "║", curses.color_pair(self.BORDER_PAIR))
                 self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "║", curses.color_pair(self.BORDER_PAIR))
             except curses.error: pass
         try:
             self.stdscr.addstr(start_y + panel_h - 1, start_x, "╚" + "═" * (panel_w - 2) + "╝", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
-        count_str = f"{len(memos)} saved"
+        count_str   = f"{len(memos)} saved"
         header_left = " 📝 saved commands"
-        header = header_left.ljust(inner_w - len(count_str)) + count_str
-        header = self._truncate(header, inner_w)
+        inner_w     = panel_w - 2
+        header      = header_left.ljust(inner_w - len(count_str)) + count_str
         try:
-            self.stdscr.addstr(start_y + 1, start_x + 1, header, curses.color_pair(self.PANEL_PAIR))
-            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y + 1, start_x + 1, self._truncate(header, inner_w), curses.color_pair(self.PANEL_PAIR))
+        except curses.error: pass
+        try:
+            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
         if not memos:
@@ -526,54 +466,65 @@ class UIEngine:
                 self.stdscr.addstr(start_y + 5, start_x + 1, self._truncate(" Use 'nyxx memo add' to save a command.", inner_w).ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
 
+        # ── List area ──────────────────────────────────────────────────────
         list_start_row   = start_y + 3
         footer_row       = start_y + panel_h - 3
         available_rows   = footer_row - list_start_row
         rows_per_entry   = 2
         viewport_entries = max(1, available_rows // rows_per_entry)
 
-        scroll = max(0, self.selection_index - (viewport_entries - 1))
+        # Centre scroll on selection
+        half   = viewport_entries // 2
+        scroll = max(0, self.selection_index - half)
         scroll = min(scroll, max(0, len(memos) - viewport_entries))
 
         for slot, mi in enumerate(range(scroll, min(scroll + viewport_entries, len(memos)))):
-            entry = memos[mi]
+            entry    = memos[mi]
             selected = (mi == self.selection_index)
-            row_y = list_start_row + slot * rows_per_entry
-            if row_y >= footer_row: break
+            row_y    = list_start_row + slot * rows_per_entry
+            if row_y >= footer_row:
+                break
 
             indicator = "▸ " if selected else "  "
             name_col  = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_PAIR)
-            name_str = self._truncate(entry.get("name", ""), 12).ljust(12)
-            desc_str = self._truncate(entry.get("desc", ""), inner_w - 16)
-            line1 = f"{indicator}{name_str}  {desc_str}"
-            
+            name_str  = self._truncate(entry.get("name", ""), 12).ljust(12)
+            desc_str  = self._truncate(entry.get("desc", ""), inner_w - 16)
+            line1     = f"{indicator}{name_str}  {desc_str}"
+            cmd_str   = "    $ " + self._truncate(entry.get("cmd", ""), inner_w - 6)
+
             try:
-                if selected:
-                    self.stdscr.addstr(row_y, start_x + 1, " " * inner_w, name_col)
-                    self.stdscr.addstr(row_y + 1, start_x + 1, " " * inner_w, name_col)
-                else:
-                    self.stdscr.addstr(row_y, start_x + 1, " " * inner_w, curses.color_pair(self.PANEL_PAIR))
-                    self.stdscr.addstr(row_y + 1, start_x + 1, " " * inner_w, curses.color_pair(self.PANEL_PAIR))
-                    
-                self.stdscr.addstr(row_y, start_x + 1, self._truncate(line1, inner_w), name_col)
-                cmd_str = "    $ " + self._truncate(entry.get("cmd", ""), inner_w - 6)
-                self.stdscr.addstr(row_y + 1, start_x + 1, cmd_str.ljust(inner_w)[:inner_w], curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_HINT_PAIR))
+                fill = curses.color_pair(self.PANEL_PAIR)
+                self.stdscr.addstr(row_y,     start_x + 1, " " * inner_w, name_col if selected else fill)
+                self.stdscr.addstr(row_y + 1, start_x + 1, " " * inner_w, name_col if selected else fill)
+                self.stdscr.addstr(row_y,     start_x + 1, self._truncate(line1, inner_w), name_col)
+                self.stdscr.addstr(row_y + 1, start_x + 1, cmd_str.ljust(inner_w)[:inner_w],
+                                   curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
 
+        # ── Scrollbar ──────────────────────────────────────────────────────
+        if len(memos) > viewport_entries:
+            sb_x  = start_x + panel_w - 2
+            bar_h = available_rows
+            thumb = int(scroll / max(1, len(memos) - viewport_entries) * (bar_h - 1))
+            for i in range(bar_h):
+                try:
+                    self.stdscr.addstr(list_start_row + i, sb_x, "█" if i == thumb else "░", curses.color_pair(self.BORDER_PAIR))
+                except curses.error: pass
+
+        # ── Footer ─────────────────────────────────────────────────────────
         try:
-            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
         if confirm_delete:
-            sel_name = memos[self.selection_index]["name"] if memos else ""
+            sel_name     = memos[self.selection_index]["name"] if memos else ""
             confirm_text = self._truncate(f" Delete '{sel_name}'?  [y] yes   [n] no", inner_w)
             try:
                 self.stdscr.addstr(footer_row + 1, start_x + 1, confirm_text.ljust(inner_w)[:inner_w], curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
         else:
-            footer = " [Tab: switch tab]   [↑↓←→: move]   [Enter: select]   [Esc: back] "
             try:
-                self.stdscr.addstr(footer_row + 1, start_x + 1, footer.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
+                self.stdscr.addstr(footer_row + 1, start_x + 1, " ↑↓ move   Enter run   d delete   q quit".ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
             except curses.error: pass
 
     def get_logo_lines(self):
@@ -592,7 +543,7 @@ class UIEngine:
         self._fill_panel_bg(start_y, start_x, panel_w, panel_h)
 
         try:
-            self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "┐", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "╗", curses.color_pair(self.BORDER_PAIR))
             for r in range(1, panel_h - 1):
                 self.stdscr.addstr(start_y + r, start_x, "║", curses.color_pair(self.BORDER_PAIR))
                 self.stdscr.addstr(start_y + r, start_x + panel_w - 1, "║", curses.color_pair(self.BORDER_PAIR))
@@ -602,7 +553,7 @@ class UIEngine:
         header = " 💡 Nyxx Keyboard Controls"
         try:
             self.stdscr.addstr(start_y + 1, start_x + 1, header.ljust(inner_w)[:inner_w], curses.color_pair(self.PANEL_PAIR) | curses.A_BOLD)
-            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
         help_lines = [
@@ -623,7 +574,7 @@ class UIEngine:
             ("  d", "Delete custom item (requires confirm)"),
             ("", ""),
             ("Theme Customizer", ""),
-            ("  Tab", "Cycle categories (Sky, Ground, Toggles, Scenes, Panels)"),
+            ("  Tab", "Cycle categories (Backgrounds, Toggles, Panels)"),
             ("  Enter", "Apply selected option block"),
         ]
 
@@ -635,7 +586,6 @@ class UIEngine:
                 continue
             
             try:
-                # We overwrite the background space dynamically
                 self.stdscr.addstr(curr_row, start_x + 1, " " * inner_w, curses.color_pair(self.PANEL_PAIR))
                 if desc == "":
                     self.stdscr.addstr(curr_row, start_x + 2, title.ljust(inner_w - 2)[:inner_w - 2], curses.color_pair(self.PANEL_PAIR) | curses.A_UNDERLINE)
@@ -647,7 +597,7 @@ class UIEngine:
 
         footer_row = start_y + panel_h - 2
         try:
-            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
             footer_text = " Press any key to close help overlay..."
             self.stdscr.addstr(footer_row + 1, start_x + 1, footer_text.ljust(inner_w)[:inner_w], curses.color_pair(self.PANEL_HINT_PAIR))
         except curses.error: pass
@@ -668,7 +618,7 @@ class UIEngine:
         panel_bg = curses.color_pair(self.PANEL_PAIR)  
 
         try:
-            self.stdscr.addstr(start_y, start_x, '╔' + '═' * (box_width - 2) + '┐', color)
+            self.stdscr.addstr(start_y, start_x, '╔' + '═' * (box_width - 2) + '╗', color)
         except curses.error: pass
 
         for y_offset in range(1, padding_y + 1):
@@ -693,7 +643,7 @@ class UIEngine:
         if footer_lines:
             divider_row = start_y + 1 + padding_y + len(lines)
             try:
-                self.stdscr.addstr(divider_row, start_x, '╠' + '═' * (box_width - 2) + '╢', color)
+                self.stdscr.addstr(divider_row, start_x, '╠' + '═' * (box_width - 2) + '╣', color)
             except curses.error: pass
             for i, line in enumerate(footer_lines):
                 row = divider_row + 1 + i
@@ -714,9 +664,7 @@ class UIEngine:
 
         return start_y, start_x, box_width
 
-    def draw_theme_panel(self, sky_themes, ground_themes, ui_themes, active_sky, active_ground, active_ui,
-                         sky_enabled, ground_enabled, logo_enabled=True, scene_names=None, active_scene=None, mode="sky"):
-
+    def draw_theme_panel(self, ui_themes, active_ui, logo_enabled=True, scene_names=None, active_scene=None, mode="scenes"):
         if scene_names is None: scene_names = []
         if active_scene is None: active_scene = ""
         curses.curs_set(0)
@@ -729,9 +677,7 @@ class UIEngine:
 
         self._fill_panel_bg(start_y, start_x, panel_w, panel_h)
 
-        # 1. Draw tabs FIRST so terminal emoji width bugs push empty space, not borders
-        tabs = [("sky", "⟡ Sky ⟡"), ("ground", "⟡ Ground ⟡"),
-                ("toggles", "⟡ Toggles ⟡"), ("scenes", "⟡ Scenes ⟡"), ("ui", "⟡ Panels ⟡")]
+        tabs = [("scenes", "⟡ Backgrounds ⟡"), ("toggles", "⟡ Toggles ⟡"), ("ui", "⟡ Panels ⟡")]
 
         tab_x = start_x + 2
         for key, label in tabs:
@@ -741,12 +687,10 @@ class UIEngine:
             except curses.error: pass
             tab_x += len(label) + 2
 
-        # Wipe the cell just outside the box to clean up any pushed terminal artifacts
         try:
             self.stdscr.addstr(start_y + 1, start_x + panel_w - 1, " ")
         except curses.error: pass
 
-        # 2. Draw Borders AFTER tabs to guarantee they overwrite shifted text perfectly
         try:
             self.stdscr.addstr(start_y, start_x, "╔" + "═" * (panel_w - 2) + "╗", curses.color_pair(self.BORDER_PAIR))
             for r in range(1, panel_h ):
@@ -756,58 +700,98 @@ class UIEngine:
         except curses.error: pass
 
         try:
-            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(start_y + 2, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
         except curses.error: pass
 
         list_start  = start_y + 3
         footer_row  = start_y + panel_h - 3
 
-        if mode == "sky":
-            for i, name in enumerate(sky_themes):
-                row_y = list_start + i
-                if row_y >= footer_row: break
-                selected = (i == self.selection_index)
-                active   = (name == active_sky)
-                indicator = "▸ " if selected else "  "
-                marker   = " ✓" if active else "  "
-                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
-                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_PAIR)
-                try:
-                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
-                except curses.error: pass
+        if mode == "scenes":
 
-        elif mode == "ground":
-            for i, name in enumerate(ground_themes):
+            visible_rows = footer_row - list_start
+            start = 0
+
+            if self.selection_index >= visible_rows:
+                start = self.selection_index - visible_rows + 1
+
+            visible = scene_names[start:start + visible_rows]
+
+            for i, name in enumerate(visible):
+
+                real_index = start + i
                 row_y = list_start + i
-                if row_y >= footer_row: break
-                selected = (i == self.selection_index)
-                active   = (name == active_ground)
+
+                selected = (real_index == self.selection_index)
+                active = (name == active_scene)
+
                 indicator = "▸ " if selected else "  "
-                marker   = " ✓" if active else "  "
-                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
-                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_PAIR)
+                marker = " ✓" if active else "  "
+
+                line = self._truncate(
+                    f"{indicator}{name}{marker}",
+                    inner_w
+                )
+
+                attr = (
+                    curses.color_pair(self.SELECTION)
+                    if selected
+                    else curses.color_pair(self.PANEL_PAIR)
+                )
+
                 try:
-                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
-                except curses.error: pass
-                
+                    self.stdscr.addstr(
+                        row_y,
+                        start_x + 1,
+                        line.ljust(inner_w)[:inner_w],
+                        attr,
+                    )
+                except curses.error:
+                    pass
+
         elif mode == "ui":
-            for i, name in enumerate(ui_themes):
+
+            visible_rows = footer_row - list_start
+            start = 0
+
+            if self.selection_index >= visible_rows:
+                start = self.selection_index - visible_rows + 1
+
+            visible = ui_themes[start:start + visible_rows]
+
+            for i, name in enumerate(visible):
+
+                real_index = start + i
                 row_y = list_start + i
-                if row_y >= footer_row: break
-                selected = (i == self.selection_index)
-                active   = (name == active_ui)
+
+                selected = (real_index == self.selection_index)
+                active = (name == active_ui)
+
                 indicator = "▸ " if selected else "  "
-                marker   = " ✓" if active else "  "
-                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
-                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_PAIR)
+                marker = " ✓" if active else "  "
+
+                line = self._truncate(
+                    f"{indicator}{name}{marker}",
+                    inner_w
+                )
+
+                attr = (
+                    curses.color_pair(self.SELECTION)
+                    if selected
+                    else curses.color_pair(self.PANEL_PAIR)
+                )
+
                 try:
-                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
-                except curses.error: pass
+                    self.stdscr.addstr(
+                        row_y,
+                        start_x + 1,
+                        line.ljust(inner_w)[:inner_w],
+                        attr,
+                    )
+                except curses.error:
+                    pass
 
         elif mode == "toggles":
             toggles = [
-                ("Sky layer",         sky_enabled),
-                ("Ground layer",      ground_enabled),
                 ("Home logo",         logo_enabled),
                 ("Panel Bg color",    config_get("panel_color")),
                 ("Text color",        config_get("text_color")),
@@ -818,8 +802,7 @@ class UIEngine:
             ]
             for i, (label, val) in enumerate(toggles):
                 row_y = list_start + i
-                if row_y >= footer_row:   # GUARD
-                    break
+                if row_y >= footer_row: break
                 selected  = (i == self.selection_index)
                 indicator = "▸ " if selected else "  "
                 
@@ -831,28 +814,15 @@ class UIEngine:
                     self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
                 except curses.error: pass
                 
-        elif mode == "scenes":
-            for i, name in enumerate(scene_names):
-                row_y = list_start + i
-                if row_y >= footer_row: break
-                selected = (i == self.selection_index)
-                active   = (name == active_scene)
-                indicator = "▸ " if selected else "  "
-                marker   = " ✓" if active else "  "
-                line = self._truncate(f"{indicator}{name}{marker}", inner_w)
-                attr = curses.color_pair(self.SELECTION) if selected else curses.color_pair(self.PANEL_PAIR)
-                try:
-                    self.stdscr.addstr(row_y, start_x + 1, line.ljust(inner_w)[:inner_w], attr)
-                except curses.error: pass
-
         try:
-            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╢", curses.color_pair(self.BORDER_PAIR))
+            self.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(self.BORDER_PAIR))
             footer = "[Tab: switch tab] [⇅⇆: move] [Enter: select] [Esc: back]"
             self.stdscr.addstr(footer_row + 1 , start_x + 1, footer.ljust(inner_w), curses.color_pair(self.PANEL_HINT_PAIR))
         except curses.error: pass
         
         if getattr(self, "error_message", None):
                 self.stdscr.addstr(max_y - 2, 0, f" Error: {self.error_message} ".ljust(max_x), curses.color_pair(self.YELLOW) | curses.A_BOLD)
+                
     def draw_home(self, items, logo_enabled=True):
         curses.curs_set(0)
         if logo_enabled:
@@ -895,7 +865,7 @@ class UIEngine:
 
     def draw_ui(self, current_path, items, logo_enabled=True):
         curses.curs_set(0)
-        if current_path == "Nyxx Home":
+        if current_path == "Navii Home":
             self.draw_home(items, logo_enabled=logo_enabled)
             return
 

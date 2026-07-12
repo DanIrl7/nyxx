@@ -5,26 +5,20 @@ import argparse
 import subprocess
 import tkinter as tk
 from tkinter import colorchooser
+import logging
+
 from .ui import UIEngine
 from .navigator import Navigator
-from .background import (
-    BackgroundEngine,
-    SKY_THEMES,
-    GROUND_THEMES,
-    SCENE_THEMES,
-)
+from .background import BackgroundEngine, SCENE_THEMES
 from .jumpstore import list_jumps, delete_jump, add_jump
 from .memostore import list_memos, delete_memo, add_memo
 from .config import get as config_get, set as config_set
-import logging
 
-# This creates a file 'nyxx_debug.log' in the same folder where you run the script
 logging.basicConfig(
-    filename='nyxx_debug.log', 
+    filename='navii_debug.log', 
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
-
 
 def _pick_image_file(initial_path=""):
     """Use PowerShell to trigger the native Windows file picker."""
@@ -38,7 +32,6 @@ def _pick_image_file(initial_path=""):
     $fd.ShowDialog() | Out-Null
     $fd.FileName
     """
-    
     try:
         result = subprocess.run(
             ["powershell", "-Command", ps_command],
@@ -51,7 +44,6 @@ def _pick_image_file(initial_path=""):
         return None
         
 def _rgb_to_xterm(r, g, b):
-    """Converts an RGB tuple to the closest curses 256-color ID."""
     if r == g == b:
         if r < 8: return 16
         if r > 248: return 231
@@ -63,7 +55,6 @@ def _rgb_to_xterm(r, g, b):
     return 16 + (36 * r_step) + (6 * g_step) + b_step
 
 def _pick_color_gui():
-    """Suspends curses, opens native color picker, returns curses color ID."""
     curses.def_prog_mode()
     curses.endwin()
     
@@ -81,40 +72,23 @@ def _pick_color_gui():
         return _rgb_to_xterm(r, g, b)
     return None
 
-
 def main(stdscr, initial_state="home"):
-    # Curses Init
     curses.curs_set(0)
     stdscr.nodelay(True)
 
     ui = UIEngine(stdscr)
 
-    sky_theme = config_get("sky_theme")
-    ground_theme = config_get("ground_theme")
     scene_theme = config_get("scene_theme") or "user image"
     ui_theme = config_get("ui_theme") 
 
-    # Immediately apply the user's UI layout
     ui.apply_ui_theme(ui_theme)
 
-
-
-    sky_enabled = config_get("sky_enabled")
-    ground_enabled = config_get("ground_enabled")
-    
     logo_enabled = config_get("logo_enabled")
     if logo_enabled is None:
         logo_enabled = True
 
-    bg_mode = config_get("bg_mode") or "layered"
-
     bg_engine = BackgroundEngine(
         stdscr,
-        sky_theme=sky_theme,
-        ground_theme=ground_theme,
-        sky_enabled=sky_enabled,
-        ground_enabled=ground_enabled,
-        mode=bg_mode,
         scene_theme=scene_theme,
         user_image_path=config_get("user_image_path") or "",
     )
@@ -123,18 +97,14 @@ def main(stdscr, initial_state="home"):
         ui.error_message = bg_engine.load_error
 
     navigator = Navigator(
-        start_path=os.environ.get(
-            "NYXX_CWD",
-            os.getcwd()
-        )
+        start_path=os.environ.get("NAVII_CWD", os.getcwd())
     )
 
     state = initial_state
     previous_state = "home"
-    theme_mode = "sky"
+    theme_mode = "scenes" # Default to scenes tab
 
     ui.selection_index = 0
-
     confirm_delete = False
     running = True
 
@@ -147,7 +117,7 @@ def main(stdscr, initial_state="home"):
                 "memo - Saved Commands",
                 "theme - Change Theme",
             ]
-            current_path = "Nyxx Home"
+            current_path = "Navii Home"
 
         elif state == "nav":
             nav_data = navigator.list_items()
@@ -168,8 +138,6 @@ def main(stdscr, initial_state="home"):
             memos = list_memos()
 
         elif state == "theme":
-            sky_themes = list(SKY_THEMES.keys())
-            ground_themes = list(GROUND_THEMES.keys())
             ui_themes = list(ui.UI_THEMES.keys())
             scene_names = list(SCENE_THEMES.keys())
 
@@ -179,12 +147,11 @@ def main(stdscr, initial_state="home"):
         # -------------------------------
         # Rendering
         # -------------------------------
-
         stdscr.erase()
         bg_engine.draw()
 
         if state == "home":
-            ui.draw_ui("Nyxx Home", items, logo_enabled=logo_enabled)
+            ui.draw_ui("Navii Home", items, logo_enabled=logo_enabled)
 
         elif state == "nav":
             ui.draw_cd_panel(
@@ -202,14 +169,8 @@ def main(stdscr, initial_state="home"):
 
         elif state == "theme":
             ui.draw_theme_panel(
-                sky_themes,
-                ground_themes,
                 ui_themes,
-                sky_theme,
-                ground_theme,
                 ui_theme,
-                sky_enabled,
-                ground_enabled,
                 logo_enabled,
                 scene_names=scene_names,
                 active_scene=scene_theme,
@@ -222,9 +183,8 @@ def main(stdscr, initial_state="home"):
         stdscr.refresh()
 
         # -------------------------------
-        # Input Global Interceptions
+        # Input Interceptions
         # -------------------------------
-
         action = ui.get_input()
         
         if action == "resize":
@@ -274,22 +234,13 @@ def main(stdscr, initial_state="home"):
                 navigator.show_hidden = not navigator.show_hidden
                 ui.selection_index = 0
             elif action in ("copy_item", "cut_item"):
-                logging.debug(f"Copy/Cut action triggered: {action}")
                 if items and items[ui.selection_index] != "..":
                     target_path = full_paths[ui.selection_index]
-                    logging.debug(f"Target file identified: {target_path}")
                     mode = "copy" if action == "copy_item" else "cut"
                     navigator.set_clipboard(target_path, mode)
-                    
-                else:
-                    logging.warning("User attempted to copy/cut the '..' parent directory shortcut.")
-
             elif action == "paste_item":
-                logging.debug("Paste action triggered.")
                 result = navigator.execute_paste()
-                logging.debug(f"Paste result: {result}")
                 ui.error_message = result["error"]
-            
             elif action == "enter":
                 if items:
                     result = navigator.go_forward(items[ui.selection_index])
@@ -340,146 +291,115 @@ def main(stdscr, initial_state="home"):
                 running = False
 
         elif state == "theme":
-                    if action == "tab":
-                        tabs = ["sky", "ground", "toggles", "scenes", "ui"]
-                        index = tabs.index(theme_mode)
-                        theme_mode = tabs[(index + 1) % len(tabs)]
-                        ui.selection_index = 0
+            if action == "tab":
+                tabs = ["scenes", "toggles", "ui"]
+                index = tabs.index(theme_mode)
+                theme_mode = tabs[(index + 1) % len(tabs)]
+                ui.selection_index = 0
 
-                    elif action in ("up", "down"):
-                        if theme_mode == "sky":
-                            ui.move_selection(action, len(sky_themes))
-                        elif theme_mode == "ground":
-                            ui.move_selection(action, len(ground_themes))
-                        elif theme_mode == "toggles":
-                            ui.move_selection(action, 9)
-                        elif theme_mode == "scenes":
-                            ui.move_selection(action, len(scene_names))
-                        elif theme_mode == "ui":
-                            ui.move_selection(action, len(ui_themes))
+            elif action in ("up", "down"):
+                if theme_mode == "scenes":
+                    ui.move_selection(action, len(scene_names))
+                elif theme_mode == "toggles":
+                    ui.move_selection(action, 7)
+                elif theme_mode == "ui":
+                    ui.move_selection(action, len(ui_themes))
 
-                    elif action == "enter":
+            elif action == "enter":
+                if theme_mode == "scenes" and scene_names:
+                    selected_scene = scene_names[ui.selection_index]
+                    if selected_scene == "user image":
+                        curses.def_prog_mode()
+                        curses.endwin()
+                        try:
+                            chosen_path = _pick_image_file(config_get("user_image_path") or "")
+                        finally:
+                            curses.reset_prog_mode()
+                            stdscr.refresh()
+                        if chosen_path:
+                            scene_theme = selected_scene
+                            config_set("scene_theme", selected_scene)
+                            config_set("user_image_path", chosen_path)
+                            bg_engine.user_image_path = chosen_path
+                            bg_engine.set_scene(selected_scene) 
+                            
+                            if hasattr(bg_engine, "load_error") and bg_engine.load_error:
+                                ui.error_message = bg_engine.load_error
+                    else:
+                        scene_theme = selected_scene
+                        config_set("scene_theme", selected_scene)
+                        bg_engine.set_scene(selected_scene)
 
-                        if theme_mode == "sky" and sky_themes:
-                            sky_theme = sky_themes[ui.selection_index]
-                            config_set("sky_theme", sky_theme)
-                            bg_engine.set_sky(sky_theme)
+                        if hasattr(bg_engine, "load_error") and bg_engine.load_error:
+                                ui.error_message = bg_engine.load_error
 
-                        elif theme_mode == "ground" and ground_themes:
-                            ground_theme = ground_themes[ui.selection_index]
-                            config_set("ground_theme", ground_theme)
-                            bg_engine.set_ground(ground_theme)
+                elif theme_mode == "toggles":
+                    if ui.selection_index == 0:
+                        logo_enabled = not logo_enabled
+                        config_set("logo_enabled", logo_enabled)
+                    elif ui.selection_index == 1:
+                        chosen = _pick_color_gui()
+                        if chosen is not None:
+                            config_set("panel_color", chosen)
+                            config_set("ui_theme", "custom")
+                            ui_theme = "custom"
+                            ui.refresh_custom_colors()
+                    elif ui.selection_index == 2:
+                        chosen = _pick_color_gui()
+                        if chosen is not None:
+                            config_set("text_color", chosen)
+                            config_set("ui_theme", "custom")
+                            ui_theme = "custom"
+                            ui.refresh_custom_colors()
+                    elif ui.selection_index == 3:
+                        chosen = _pick_color_gui()
+                        if chosen is not None:
+                            config_set("highlight_panel_color", chosen)
+                            config_set("ui_theme", "custom")
+                            ui_theme = "custom"
+                            ui.refresh_custom_colors()
+                    elif ui.selection_index == 4:
+                        chosen = _pick_color_gui()
+                        if chosen is not None:
+                            config_set("highlight_text_color", chosen)
+                            config_set("ui_theme", "custom")
+                            ui_theme = "custom"
+                            ui.refresh_custom_colors()
+                    elif ui.selection_index == 5:
+                        chosen = _pick_color_gui()
+                        if chosen is not None:
+                            config_set("border_fg", chosen)
+                            config_set("ui_theme", "custom")
+                            ui_theme = "custom"
+                            ui.refresh_custom_colors()
+                    elif ui.selection_index == 6:
+                        chosen = _pick_color_gui()
+                        if chosen is not None:
+                            config_set("border_bg", chosen)
+                            config_set("ui_theme", "custom")
+                            ui_theme = "custom"
+                            ui.refresh_custom_colors()
 
-                        elif theme_mode == "toggles":
-                            if ui.selection_index == 0:
-                                sky_enabled = not sky_enabled
-                                config_set("sky_enabled", sky_enabled)
-                                bg_engine.set_sky_enabled(sky_enabled)
-                            elif ui.selection_index == 1:
-                                ground_enabled = not ground_enabled
-                                config_set("ground_enabled", ground_enabled)
-                                bg_engine.set_ground_enabled(ground_enabled)
-                            elif ui.selection_index == 2:
-                                logo_enabled = not logo_enabled
-                                config_set("logo_enabled", logo_enabled)
-                                
-                            # Custom Color Pickers
-                            elif ui.selection_index == 3:
-                                chosen = _pick_color_gui()
-                                if chosen is not None:
-                                    config_set("panel_color", chosen)
-                                    config_set("ui_theme", "custom")
-                                    ui_theme = "custom"
-                                    ui.refresh_custom_colors()
-                            elif ui.selection_index == 4:
-                                chosen = _pick_color_gui()
-                                if chosen is not None:
-                                    config_set("text_color", chosen)
-                                    config_set("ui_theme", "custom")
-                                    ui_theme = "custom"
-                                    ui.refresh_custom_colors()
-                            elif ui.selection_index == 5:
-                                chosen = _pick_color_gui()
-                                if chosen is not None:
-                                    config_set("highlight_panel_color", chosen)
-                                    config_set("ui_theme", "custom")
-                                    ui_theme = "custom"
-                                    ui.refresh_custom_colors()
-                            elif ui.selection_index == 6:
-                                chosen = _pick_color_gui()
-                                if chosen is not None:
-                                    config_set("highlight_text_color", chosen)
-                                    config_set("ui_theme", "custom")
-                                    ui_theme = "custom"
-                                    ui.refresh_custom_colors()
-                            elif ui.selection_index == 7:
-                                chosen = _pick_color_gui()
-                                if chosen is not None:
-                                    config_set("border_fg", chosen)
-                                    config_set("ui_theme", "custom")
-                                    ui_theme = "custom"
-                                    ui.refresh_custom_colors()
-                            elif ui.selection_index == 8:
-                                chosen = _pick_color_gui()
-                                if chosen is not None:
-                                    config_set("border_bg", chosen)
-                                    config_set("ui_theme", "custom")
-                                    ui_theme = "custom"
-                                    ui.refresh_custom_colors()
-                                    
-                        elif theme_mode == "scenes" and scene_names:
-                            selected_scene = scene_names[ui.selection_index]
-                            if selected_scene == "user image":
-                                curses.def_prog_mode()
-                                curses.endwin()
-                                try:
-                                    chosen_path = _pick_image_file(config_get("user_image_path") or "")
-                                finally:
-                                    curses.reset_prog_mode()
-                                    stdscr.refresh()
-                                if chosen_path:
-                                    scene_theme = selected_scene
-                                    config_set("scene_theme", selected_scene)
-                                    config_set("user_image_path", chosen_path)
-                                    config_set("bg_mode", "scene")
-                                    bg_engine.user_image_path = chosen_path
-                                    bg_engine._set_scene(selected_scene)  # set name first, no generate yet
-                                    bg_engine.set_mode("scene")
-                                    
-                                    if hasattr(bg_engine, "load_error") and bg_engine.load_error:
-                                        ui.error_message = bg_engine.load_error
-                            else:
-                                scene_theme = selected_scene
-                                config_set("scene_theme", selected_scene)
-                                config_set("bg_mode", "scene")
-                                bg_engine.set_mode("scene")
-                                bg_engine.set_scene(selected_scene)
+                elif theme_mode == "ui" and ui_themes:
+                    ui_theme = ui_themes[ui.selection_index]
+                    config_set("ui_theme", ui_theme)
+                    ui.apply_ui_theme(ui_theme)
 
-                                if hasattr(bg_engine, "load_error") and bg_engine.load_error:
-                                        ui.error_message = bg_engine.load_error
-
-                        elif theme_mode == "ui" and ui_themes:
-                            ui_theme = ui_themes[ui.selection_index]
-                            config_set("ui_theme", ui_theme)
-                            ui.apply_ui_theme(ui_theme)
-
-                    elif action == "back":
-                        state = "home"
-                        theme_mode = "sky"
+            elif action == "back":
+                state = "home"
+                theme_mode = "scenes"
 
     ui.cleanup()
-
 
 def run_tui(initial_state="home"):
     curses.wrapper(lambda s: main(s, initial_state))
     
-
 def print_help():
     help_text = """
 nyxx — A terminal-based directory navigator.
 
 Usage:
-  nyxx                 Start at the home dashboard
+  nyxx                Start at the home dashboard
   nyxx cd              Start visual directory navigator
   nyxx jump            Open saved locations panel
   nyxx jump [name]     Jump directly to a saved location
@@ -494,9 +414,8 @@ Options:
 """
     print(help_text.strip())
 
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Nyxx terminal navigator", add_help=False)
+    parser = argparse.ArgumentParser(description="Navii terminal navigator", add_help=False)
     parser.add_argument("subcommand", nargs="?", default="home")
     parser.add_argument("name", nargs="?", default=None)
     parser.add_argument("-h", "--help", action="store_true")
