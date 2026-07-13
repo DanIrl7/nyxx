@@ -6,7 +6,6 @@ import subprocess
 import tkinter as tk
 from tkinter import colorchooser
 import logging
-
 from .ui import UIEngine
 from .navigator import Navigator
 from .background import BackgroundEngine, SCENE_THEMES
@@ -391,30 +390,7 @@ def main(stdscr, initial_state="home"):
 
     ui.cleanup()
 
-def run_tui(initial_state="home"):
-    curses.wrapper(lambda s: main(s, initial_state))
-    
-def print_help():
-    help_text = """
-nyxx — A terminal-based directory navigator.
-
-Usage:
-  nyxx                Start at the home dashboard
-  nyxx cd              Start visual directory navigator
-  nyxx jump            Open saved locations panel
-  nyxx jump [name]     Jump directly to a saved location
-  nyxx jump add        Save current directory with a name
-  nyxx memo            Open saved commands panel
-  nyxx memo [name]     Run a saved command directly
-  nyxx memo add        Save a new command with a name
-  nyxx theme           Open theme configuration panel
-
-Options:
-  -h, --help           Show this message
-"""
-    print(help_text.strip())
-
-if __name__ == "__main__":
+def run_cli():
     parser = argparse.ArgumentParser(description="Navii terminal navigator", add_help=False)
     parser.add_argument("subcommand", nargs="?", default="home")
     parser.add_argument("name", nargs="?", default=None)
@@ -424,9 +400,10 @@ if __name__ == "__main__":
 
     valid_subcommands = ["home", "cd", "jump", "memo", "theme"]
     if args.help or args.subcommand not in valid_subcommands:
-        print_help()
+        print("Usage: navii [home|cd|jump|memo|theme]")
         sys.exit(0)
 
+    # Handle direct CLI lookups (e.g., executing a memo)
     if args.name and args.name != "add":
         if args.subcommand == "jump":
             from .jumpstore import find_jump
@@ -434,7 +411,7 @@ if __name__ == "__main__":
             if entry:
                 print("CD:" + os.path.expanduser(entry["path"]), flush=True)
             else:
-                print(f"nyxx: no jump named '{args.name}'", file=sys.stderr)
+                print(f"navii: no jump named '{args.name}'", file=sys.stderr)
                 sys.exit(1)
         elif args.subcommand == "memo":
             from .memostore import find_memo
@@ -442,39 +419,37 @@ if __name__ == "__main__":
             if entry:
                 print("EXEC:" + entry["cmd"], flush=True)
             else:
-                print(f"nyxx: no memo named '{args.name}'", file=sys.stderr)
+                print(f"navii: no memo named '{args.name}'", file=sys.stderr)
                 sys.exit(1)
         sys.exit(0)
 
+    # Handle adding commands (e.g., navii memo add)
     if args.name == "add":
         if args.subcommand == "jump":
+            from .jumpstore import add_jump
             name = input("Jump name: ").strip()
             desc = input("Description: ").strip()
             path = input("Path (leave blank for current dir): ").strip()
             if not path:
                 path = os.getcwd()
             success, err = add_jump(name, desc, path)
-            if success:
-                print(f"Jump '{name}' saved.")
-            else:
-                print(f"Error saving jump: {err}")
+            print(f"Jump '{name}' saved." if success else f"Error: {err}")
         elif args.subcommand == "memo":
+            from .memostore import add_memo
             name = input("Memo name: ").strip()
             desc = input("Description: ").strip()
-            cmd = input("Command: ").strip()
+            cmd  = input("Command: ").strip()
             success, err = add_memo(name, desc, cmd)
-            if success:
-                print(f"Memo '{name}' saved.")
-            else:
-                print(f"Error saving memo: {err}")
+            print(f"Memo '{name}' saved." if success else f"Error: {err}")
         sys.exit(0)
 
+    # If no quick commands were run, boot the visual UI
     state_map = {
-        "home": "home",
-        "cd": "nav",
-        "jump": "jump",
-        "memo": "memo",
-        "theme": "theme"
+        "home": "home", "cd": "nav",
+        "jump": "jump", "memo": "memo", "theme": "theme"
     }
+    curses.wrapper(lambda stdscr: main(stdscr, initial_state=state_map[args.subcommand]))
 
-    run_tui(state_map[args.subcommand])
+
+if __name__ == "__main__":
+    run_cli()
