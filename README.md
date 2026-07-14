@@ -2,6 +2,9 @@
 
 A terminal-based directory navigator built with Python and curses. Navigate your filesystem, save frequently visited locations, store reusable shell commands, and customise your terminal background — all without leaving the keyboard.
 
+<img width="1550" height="800" alt="image" src="https://github.com/user-attachments/assets/3f75aa3d-738e-418e-8b01-7394a738d912" />
+
+
 ```
 
 nyxx cd       — visual directory browser
