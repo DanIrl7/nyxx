@@ -4,27 +4,10 @@ A terminal-based directory navigator built with Python and curses. Navigate your
 
 <img width="1549" height="740" alt="nyxx screenshot" src="https://github.com/user-attachments/assets/596eb2aa-2d6f-476e-9ef1-71158511cea1" />
 
-```text
-
 ```
-
-nyxx cd — visual directory browser
-nyxx jump — saved locations
-nyxx memo — saved commands
-nyxx theme — sky + ground themes
-
-```
-
-## Installation
-
-### Windows (Recommended)
-
-Download the latest `Navii_Setup_v1.0.exe` from our releases page:
-https://github.com/DanIrl7/nyxx/releases
-
-Running this installer will set up the application and ensure all necessary assets are in the correct location.
-
-### Manual / Source Install
+nyxx cd       — visual directory browser
+nyxx jump     — saved locations
+nyxx memo     — saved commands
 nyxx theme    — backgrounds, scenes, and panel colors
 ```
 
@@ -52,7 +35,6 @@ After installing, open a **new** PowerShell window and type `nyxx`.
 ### Linux / macOS (From Source)
 
 ```bash
-git clone https://github.com/DanIrl7/nyxx.git
 git clone https://github.com/DanIrl7/nyxx.git
 cd nyxx
 bash install.sh
@@ -95,16 +77,13 @@ nyxx memo add          # save a new command with a name
 nyxx theme
 ```
 
-Opens a panel with three tabs — Sky, Ground, and Toggles. Pick from 5 sky themes and 5 ground themes independently, or toggle either layer on/off.
-Opens a panel with five tabs:
+Opens a panel with three tabs:
 
-| Tab     | What it does                                                       |
-| ------- | ------------------------------------------------------------------ |
-| Sky     | Choose a sky particle theme (layered mode)                         |
-| Ground  | Choose a ground theme (layered mode)                               |
-| Toggles | Toggle sky/ground layers on or off, enable/disable the logo        |
-| Scenes  | Switch to a full-screen scene (Vaporwave Sunset or a custom image) |
-| Panels  | Customise panel background, text, highlight, and border colors     |
+| Tab         | What it does                                                                           |
+| ----------- | -------------------------------------------------------------------------------------- |
+| Backgrounds | Select a full-screen background image or choose "Browse File..." to select a custom one |
+| Toggles     | Toggle the Home logo and individual panel component color features                    |
+| Panels      | Switch between built-in UI color palettes/presets (e.g., Cyber Cyan, Matrix Green, etc.)|
 
 ---
 
@@ -112,16 +91,6 @@ Opens a panel with five tabs:
 
 | Key                    | Action                                           |
 | ---------------------- | ------------------------------------------------ |
-| `↑` `↓` or `k` `j`     | Move selection up / down                         |
-| `→` `l` or `Enter`     | Enter directory / confirm                        |
-| `←` `h` or `Backspace` | Go up a directory / go back                      |
-| `Space`                | Jump to selected directory                       |
-| `.`                    | Toggle hidden files                              |
-| `d`                    | Delete selected jump or memo (with confirmation) |
-| `Tab`                  | Switch tabs in the theme panel                   |
-| `q` or `Esc`           | Quit                                             |
-| Key                    | Action                                           |
-| ---                    | ---                                              |
 | `↑` `↓` or `k` `j`     | Move selection up / down                         |
 | `→` `l` or `Enter`     | Enter directory / confirm                        |
 | `←` `h` or `Backspace` | Go up a directory / go back                      |
@@ -139,101 +108,41 @@ Opens a panel with five tabs:
 
 ## Backgrounds
 
-Nyxx has two background modes that are switched from the theme panel.
+Nyxx renders full-screen background images directly in your terminal using a custom vectorised quad-pixel/half-block rendering engine. 
 
-### Layered Mode
+### Supported Formats
+Nyxx can load and display any image in **JPG, PNG, WebP, BMP, GIF, or TIFF** format.
 
-Two independent layers — sky on top, ground on the bottom — that you can mix, match, and toggle independently.
-
-**Sky themes:** Starry Night, Vaporwave, Matrix, Sunset, Rainy Day
-
-**Ground themes:** City Skyscrapers, Beach, Forest, Ranch, Ocean
-
-Themes are saved to `~/.nyxx/config.json` (Windows: your User Profile directory) and persist across sessions.
-
-### How to add a theme
-
-**Adding a sky theme** — add a new entry to `SKY_THEMES` in `src/nyxx/background.py`:
-
-### Scene Mode
-
-A single full-screen background that replaces the layered system entirely.
-
-**Built-in scene:** Vaporwave Sunset — a procedurally generated pink and blue sunset with a palm tree silhouette, rendered using Unicode half-block characters.
-
-**Custom image:** Select any image from your filesystem (JPG, PNG, WebP, BMP, GIF, TIFF). Nyxx quantizes it to 14 colors and renders it at double vertical resolution using the `▄` half-block technique, fitting it to your exact terminal dimensions automatically.
-
-### Panel Colors
-
-The Panels tab in the theme editor lets you pick custom colors for:
-
-- Panel background
-- Panel text
-- Highlighted item background and text
-- Border foreground and background
-
-Colors are chosen from a native color picker and saved to config. They persist across sessions and are applied independently of whichever background mode is active.
+### Resolution & Color Quantization
+* **Resolution**: Images are dynamically resized and rendered at double vertical resolution using the `▄` and other quad-pixel Unicode characters (e.g., `▗`, `▖`, `▝`, `▐`, `▞`, `▟`, etc.) to fit your exact terminal window dimensions.
+* **Color Quantization**: The rendering engine quantizes images down to 14 colors and maps them using standard or custom terminal color pairs, creating a beautifully stylized terminal-art aesthetic.
 
 ---
 
-## How to Add a Theme
+## Customizing Backgrounds & UI Themes
 
-### Adding a sky theme
+You can customize both the background scenes and the panel UI presets.
 
-Open `src/nyxx/background.py` and add a new entry to `SKY_THEMES`:
+### Adding a New Background Scene
+To add a new background scene to the selector tab:
+1. Simply place your image file (e.g., `my_background.jpg`) inside the `assets/backgrounds/` directory.
+2. Nyxx will automatically scan this directory on startup, convert the filename to a title (e.g., `My Background`), and list it under the **Backgrounds** tab.
+
+Alternatively, you can select the **Browse File...** option from the Backgrounds tab to open a native file picker and load any image from your system.
+
+### Adding a New UI Panel Theme
+If you want to add a new preset panel color scheme, open `src/nyxx/ui.py` and add an entry to the `UI_THEMES` dictionary:
 
 ```python
 "your theme name": {
-    "label": "Your Theme Name",
-    "color_pairs": [5, 6, 7],
-    "glow_pair": 9,
-    "glow_char": "▁",
-    "density": 0.04,
-    "particle_chars": ["✦", "·", "*"],
-    "ascii_chars": ["+", ".", "*"],
-    "particle_weights": [2, 6, 3],
-    "label":            "Your Theme Name",
-    "color_pairs":      [5, 6, 7],        # [bright, mid, dim] — reuse existing pairs or add new ones in ui.py
-    "glow_pair":        9,                # color pair for the horizon glow line
-    "glow_char":        "▁",             # character used for the glow row
-    "density":          0.04,             # fraction of sky cells that get a particle (0.0–1.0)
-    "particle_chars":   ["✦", "·", "*"], # characters scattered across the sky
-    "ascii_chars":      ["+", ".", "*"],  # fallback for terminals without unicode
-    "particle_weights": [2, 6, 3],        # probability weights matching particle_chars
-},
+    "border": curses.COLOR_CYAN,
+    "text": curses.COLOR_WHITE,
+    "highlight": curses.COLOR_CYAN,
+    "hint": curses.COLOR_YELLOW,
+    "bg": curses.COLOR_BLACK
+}
 ```
-
-**Adding a ground theme** — add a new entry to `GROUND_THEMES`:
-
-### Adding a ground theme
-
-Add a new entry to `GROUND_THEMES`:
-
-```python
-"your ground theme": {
-    "label": "Your Ground Theme",
-    "color_pair": 31,
-    "accent_pair": 32,
-    "highlight_pair": 33,
-    "detail_fn": "beach_surf",
-    "tallest": 8,
-    "label":          "Your Ground Theme",
-    "color_pair":     31,
-    "accent_pair":    32,
-    "highlight_pair": 33,
-    "detail_fn":      "beach_surf",   # reuse an existing renderer or add your own
-    "tallest":        8,
-    "layers": [
-        {"h": 2, "chars": "▓▓▓▓▓▓", "color": "main", "bold": True, "dim": False},
-        {"h": 2, "chars": "≈ ~ ≈ ~", "color": "accent", "bold": False, "dim": False},
-        {"h": 1, "chars": "~ ≋ ~ ≋", "color": "highlight", "bold": True, "dim": False},
-    ],
-},
-```
-
-## Configuration & Data
-
-If you need new colors, add a `curses.init_pair(N, ...)` line in `UIEngine.__init__()` in `ui.py` and reference that number in your theme. The theme selector picks up new entries automatically — no other files need to change.
+The application will automatically pick up your new theme and add it to the **Panels** tab selection list.
 
 ---
 
@@ -243,11 +152,6 @@ All persistent data lives in `~/.nyxx/`:
 
 | File          | Contents                                                     |
 | ------------- | ------------------------------------------------------------ |
-| `config.json` | Active sky/ground theme, layer toggles                       |
-| `jumps.json`  | Saved locations                                              |
-| `memos.json`  | Saved commands                                               |
-| File          | Contents                                                     |
-| ---           | ---                                                          |
 | `config.json` | Active theme, background mode, panel colors, last image path |
 | `jumps.json`  | Saved locations                                              |
 | `memos.json`  | Saved commands                                               |
@@ -295,8 +199,6 @@ source ~/.bashrc
 
 - Python 3.8+
 - A terminal with UTF-8 support
-- Windows: `windows-curses` (included in source install requirements)
-- A terminal with UTF-8 support
 - Windows: `windows-curses` is installed automatically via `requirements.txt`
 - Custom image backgrounds: `Pillow` (`pip install Pillow`) — included in `requirements.txt`
 
@@ -305,8 +207,3 @@ source ~/.bashrc
 ## License
 
 MIT — see [LICENSE](LICENSE)
-
-```
-
-The main additions compared to your original are the Windows installer section at the top, the copy/cut/paste keybindings, the `z` help key, the full Scenes and Panels tab descriptions in the theme section, and the updated config table that includes the new keys added during development.
-```

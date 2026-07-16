@@ -13,8 +13,12 @@ from .jumpstore import list_jumps, delete_jump, add_jump
 from .memostore import list_memos, delete_memo, add_memo
 from .config import get as config_get, set as config_set
 
+_log_dir = os.path.expanduser("~/.nyxx")
+os.makedirs(_log_dir, exist_ok=True)
+_log_file = os.path.join(_log_dir, 'nyxx_debug.log')
+
 logging.basicConfig(
-    filename='navii_debug.log', 
+    filename=_log_file, 
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -70,6 +74,16 @@ def _pick_color_gui():
         r, g, b = [int(c) for c in color[0]]
         return _rgb_to_xterm(r, g, b)
     return None
+    
+def write_shell_action(action_type, value):
+    """Writes actions to a temporary file to be executed by shell wrappers."""
+    action_file = os.path.expanduser("~/.nyxx/action")
+    try:
+        os.makedirs(os.path.dirname(action_file), exist_ok=True)
+        with open(action_file, "w", encoding="utf-8") as f:
+            f.write(f"{action_type}:{value}")
+    except Exception as e:
+        logging.error(f"Failed to write shell action: {e}")
 
 def main(stdscr, initial_state="home"):
     curses.curs_set(0)
@@ -96,7 +110,7 @@ def main(stdscr, initial_state="home"):
         ui.error_message = bg_engine.load_error
 
     navigator = Navigator(
-        start_path=os.environ.get("NAVII_CWD", os.getcwd())
+        start_path=os.environ.get("NYXX_CWD", os.getcwd())
     )
 
     state = initial_state
@@ -116,7 +130,7 @@ def main(stdscr, initial_state="home"):
                 "memo - Saved Commands",
                 "theme - Change Theme",
             ]
-            current_path = "Navii Home"
+            current_path = "Nyxx Home"
 
         elif state == "nav":
             nav_data = navigator.list_items()
@@ -150,7 +164,7 @@ def main(stdscr, initial_state="home"):
         bg_engine.draw()
 
         if state == "home":
-            ui.draw_ui("Navii Home", items, logo_enabled=logo_enabled)
+            ui.draw_ui("Nyxx Home", items, logo_enabled=logo_enabled)
 
         elif state == "nav":
             ui.draw_cd_panel(
@@ -253,7 +267,7 @@ def main(stdscr, initial_state="home"):
                         if selected == ".."
                         else os.path.join(navigator.get_current_path(), selected)
                     )
-                    print("CD:" + target, flush=True)
+                    write_shell_action("CD", target)
                     running = False
             elif action == "back":
                 state = "home"
@@ -280,13 +294,14 @@ def main(stdscr, initial_state="home"):
             elif action == "back":
                 state = "home"
                 confirm_delete = False
+                ui.selection_index = 0
             elif action == "enter" and data:
                 if state == "jump":
                     path = os.path.expanduser(data[ui.selection_index]["path"])
-                    print("CD:" + path, flush=True)
+                    write_shell_action("CD", path)
                 else:
                     cmd = data[ui.selection_index]["cmd"]
-                    print("EXEC:" + cmd, flush=True)
+                    write_shell_action("EXEC", cmd)
                 running = False
 
         elif state == "theme":
@@ -387,11 +402,17 @@ def main(stdscr, initial_state="home"):
             elif action == "back":
                 state = "home"
                 theme_mode = "scenes"
+                ui.selection_index = 0
 
     ui.cleanup()
 
+def run_tui(initial_state="home"):
+    curses.wrapper(
+        lambda stdscr: main(stdscr, initial_state=initial_state)
+    )
+
 def run_cli():
-    parser = argparse.ArgumentParser(description="Navii terminal navigator", add_help=False)
+    parser = argparse.ArgumentParser(description="Nyxx terminal navigator", add_help=False)
     parser.add_argument("subcommand", nargs="?", default="home")
     parser.add_argument("name", nargs="?", default=None)
     parser.add_argument("-h", "--help", action="store_true")
@@ -400,7 +421,7 @@ def run_cli():
 
     valid_subcommands = ["home", "cd", "jump", "memo", "theme"]
     if args.help or args.subcommand not in valid_subcommands:
-        print("Usage: navii [home|cd|jump|memo|theme]")
+        print("Usage: nyxx [home|cd|jump|memo|theme]")
         sys.exit(0)
 
     # Handle direct CLI lookups (e.g., executing a memo)
@@ -409,21 +430,21 @@ def run_cli():
             from .jumpstore import find_jump
             entry = find_jump(args.name)
             if entry:
-                print("CD:" + os.path.expanduser(entry["path"]), flush=True)
+                write_shell_action("CD", os.path.expanduser(entry["path"]))
             else:
-                print(f"navii: no jump named '{args.name}'", file=sys.stderr)
+                print(f"nyxx: no jump named '{args.name}'", file=sys.stderr)
                 sys.exit(1)
         elif args.subcommand == "memo":
             from .memostore import find_memo
             entry = find_memo(args.name)
             if entry:
-                print("EXEC:" + entry["cmd"], flush=True)
+                write_shell_action("EXEC", entry["cmd"])
             else:
-                print(f"navii: no memo named '{args.name}'", file=sys.stderr)
+                print(f"nyxx: no memo named '{args.name}'", file=sys.stderr)
                 sys.exit(1)
         sys.exit(0)
 
-    # Handle adding commands (e.g., navii memo add)
+    # Handle adding commands (e.g., nyxx memo add)
     if args.name == "add":
         if args.subcommand == "jump":
             from .jumpstore import add_jump
@@ -445,11 +466,14 @@ def run_cli():
 
     # If no quick commands were run, boot the visual UI
     state_map = {
-        "home": "home", "cd": "nav",
-        "jump": "jump", "memo": "memo", "theme": "theme"
+    "home": "home",
+    "cd": "nav",
+    "jump": "jump",
+    "memo": "memo",
+    "theme": "theme"
     }
-    curses.wrapper(lambda stdscr: main(stdscr, initial_state=state_map[args.subcommand]))
 
+    run_tui(state_map[args.subcommand])
 
 if __name__ == "__main__":
     run_cli()

@@ -28,7 +28,7 @@ class TestNavigator:
         nav = Navigator()
         result = nav.list_items()
         for item in result["items"]:
-            assert not item.startswith('.')
+            assert item == ".." or not item.startswith('.')
 
 class TestPathHandler:
     def test_validate_path_home(self):

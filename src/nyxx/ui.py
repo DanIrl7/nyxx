@@ -865,7 +865,7 @@ class UIEngine:
 
     def draw_ui(self, current_path, items, logo_enabled=True):
         curses.curs_set(0)
-        if current_path == "Navii Home":
+        if current_path == "Nyxx Home":
             self.draw_home(items, logo_enabled=logo_enabled)
             return
 

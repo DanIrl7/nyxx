@@ -8,26 +8,15 @@
 AppId={{2BD385C9-B54B-4973-AF5E-2BB9E1F3B355}
 AppName=Nyxx
 AppVersion=1.0
-;AppVerName=Nyxx 1.0
 AppPublisher=Danirl7
 AppPublisherURL=https://github.com/DanIrl7/nyxx
 AppSupportURL=https://github.com/DanIrl7/nyxx
 AppUpdatesURL=https://github.com/DanIrl7/nyxx
 DefaultDirName={autopf}\Nyxx
 UninstallDisplayIcon={app}\Nyxx.exe
-; "ArchitecturesAllowed=x64compatible" specifies that Setup cannot run
-; on anything but x64 and Windows 11 on Arm.
 ArchitecturesAllowed=x64compatible
-; "ArchitecturesInstallIn64BitMode=x64compatible" requests that the
-; install be done in "64-bit mode" on x64 or Windows 11 on Arm,
-; meaning it should use the native 64-bit Program Files directory and
-; the 64-bit view of the registry.
 ArchitecturesInstallIn64BitMode=x64compatible
-; Uncomment the following line to use a 64-bit installer.
-;SetupArchitecture=x64
 DisableProgramGroupPage=yes
-; Uncomment the following line to run in non administrative install mode (install for current user only).
-;PrivilegesRequired=lowest
 OutputDir=C:\Users\t430\Desktop
 OutputBaseFilename=Nyxx_Setup_1.0
 SetupIconFile=C:\Users\t430\3D Objects\coding\projects\Nyxx\assets\icon.ico
@@ -42,13 +31,132 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "C:\Users\t430\3D Objects\coding\projects\Nyxx\dist\Nyxx.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\Users\t430\3D Objects\coding\projects\Nyxx\assets\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; NOTE: Don't use "Flags: ignoreversion" on any shared system files
+; FIXED: Changed DestDir to {app}\assets so backgrounds are unpacked inside 'assets/backgrounds' instead of root!
+Source: "C:\Users\t430\3D Objects\coding\projects\Nyxx\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Nyxx"; Filename: "{app}\Nyxx.exe"
-Name: "{autodesktop}\Nyxx"; Filename: "{app}\Nyxx.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Nyxx"; Filename: "{app}\Nyxx.exe"; IconFilename: "{app}\assets\icon.ico"
+Name: "{autodesktop}\Nyxx"; Filename: "{app}\Nyxx.exe"; Tasks: desktopicon; IconFilename: "{app}\assets\icon.ico"
+
+[Registry]
+; Standard: Adds the installation directory to the user's PATH environment variable (guarded by duplicate check function)
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Flags: preservestringtype; Check: NotOnPath
 
 [Run]
 Filename: "{app}\Nyxx.exe"; Description: "{cm:LaunchProgram,Nyxx}"; Flags: nowait postinstall skipifsilent
 
+[Code]
+// Helper function to check if {app} is already added to the user's Path environment variable
+function NotOnPath(): Boolean;
+var
+  PathStr: String;
+begin
+  if RegQueryStringValue(HKCU, 'Environment', 'Path', PathStr) then
+  begin
+    Result := Pos(ExpandConstant('{app}'), PathStr) = 0;
+  end
+  else
+  begin
+    Result := True;
+  end;
+end;
+
+// Helper function to append text blocks cleanly to shell profile files
+procedure AppendToProfile(ProfilePath: String; Lines: TArrayOfString);
+var
+  FileLines: TArrayOfString;
+  I: Integer;
+  AlreadyExists: Boolean;
+begin
+  ProfilePath := ExpandConstant(ProfilePath);
+  if not FileExists(ProfilePath) then
+  begin
+    ForceDirectories(ExtractFilePath(ProfilePath));
+    SaveStringsToFile(ProfilePath, Lines, False);
+    Exit;
+  end;
+
+  if LoadStringsFromFile(ProfilePath, FileLines) then
+  begin
+    AlreadyExists := False;
+    for I := 0 to GetArrayLength(FileLines) - 1 do
+    begin
+      if (Pos('function nyxx', FileLines[I]) > 0) or (Pos('nyxx() {', FileLines[I]) > 0) then
+      begin
+        AlreadyExists := True;
+        Break;
+      end;
+    end;
+    if not AlreadyExists then
+    begin
+      SaveStringsToFile(ProfilePath, Lines, True);
+    end;
+  end;
+end;
+
+// Runs automatically at the end of the installation process
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  PowerShellLines: TArrayOfString;
+  BashLines: TArrayOfString;
+  UserHome: String;
+  Profile1, Profile2, BashrcPath, ZshrcPath: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    // Attempt to resolve home directory (~ or %USERPROFILE%)
+    UserHome := GetEnv('USERPROFILE');
+    if UserHome = '' then
+      UserHome := ExpandConstant('{userdocs}\..'); // Safe fallback to parent of 'Documents' folder
+
+    // 1. Define PowerShell shell integration lines dynamically
+    SetArrayLength(PowerShellLines, 15);
+    PowerShellLines[0] := '';
+    PowerShellLines[1] := '# Nyxx Shell Integration';
+    PowerShellLines[2] := 'function nyxx {';
+    PowerShellLines[3] := '    & "' + ExpandConstant('{app}') + '\Nyxx.exe" $args';
+    PowerShellLines[4] := '    $act = "$HOME/.nyxx/action"';
+    PowerShellLines[5] := '    if (Test-Path $act) {';
+    PowerShellLines[6] := '        $c = Get-Content $act -Raw';
+    PowerShellLines[7] := '        Remove-Item $act';
+    PowerShellLines[8] := '        if ($c -match "^CD:(.*)") {';
+    PowerShellLines[9] := '            Set-Location $Matches[1].Trim()';
+    PowerShellLines[10] := '        } elseif ($c -match "^EXEC:(.*)") {';
+    PowerShellLines[11] := '            Invoke-Expression $Matches[1].Trim()';
+    PowerShellLines[12] := '        }';
+    PowerShellLines[13] := '    }';
+    PowerShellLines[14] := '}';
+
+    // Target profiles for Windows PowerShell (5.1) and PowerShell Core (6+)
+    Profile1 := UserHome + '\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1';
+    Profile2 := UserHome + '\Documents\PowerShell\Microsoft.PowerShell_profile.ps1';
+
+    AppendToProfile(Profile1, PowerShellLines);
+    AppendToProfile(Profile2, PowerShellLines);
+
+    // 2. Define Bash/Zsh shell integration lines
+    SetArrayLength(BashLines, 16);
+    BashLines[0] := '';
+    BashLines[1] := '# Nyxx Shell Integration';
+    BashLines[2] := 'nyxx() {';
+    BashLines[3] := '    "' + ExpandConstant('{app}') + '/Nyxx.exe" "$@"';
+    BashLines[4] := '    local action_file="$HOME/.nyxx/action"';
+    BashLines[5] := '    if [ -f "$action_file" ]; then';
+    BashLines[6] := '        local content=$(cat "$action_file")';
+    BashLines[7] := '        rm -f "$action_file"';
+    BashLines[8] := '        if [[ "$content" =~ ^CD:(.*) ]]; then';
+    BashLines[9] := '            cd "${BASH_REMATCH[1]}"';
+    BashLines[10] := '        elif [[ "$content" =~ ^EXEC:(.*) ]]; then';
+    BashLines[11] := '            eval "${BASH_REMATCH[1]}"';
+    BashLines[12] := '        fi';
+    BashLines[13] := '    fi';
+    BashLines[14] := '}';
+    BashLines[15] := '';
+
+    BashrcPath := UserHome + '\.bashrc';
+    ZshrcPath := UserHome + '\.zshrc';
+
+    AppendToProfile(BashrcPath, BashLines);
+    AppendToProfile(ZshrcPath, BashLines);
+  end;
+end;

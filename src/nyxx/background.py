@@ -1,3 +1,5 @@
+import sys
+import os
 import curses
 import numpy as np
 from pathlib import Path
@@ -33,6 +35,33 @@ VAPORWAVE_PALETTE_8 = [
     curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
 ]
 
+def get_backgrounds_dir():
+    """Robustly resolves the path to assets/backgrounds across dev and frozen environments."""
+    if getattr(sys, 'frozen', False):
+        # Running inside a compiled PyInstaller bundle
+        exe_dir = Path(sys.executable).resolve().parent
+        
+        # 1. Try finding assets in the installation folder next to the .exe (Inno Setup style)
+        assets_dir = exe_dir / "assets" / "backgrounds"
+        if assets_dir.exists():
+            return assets_dir
+            
+        # 2. Try the PyInstaller temporary directory (_MEIPASS) if packaged inside the .exe
+        meipass_dir = Path(getattr(sys, '_MEIPASS', ''))
+        assets_dir = meipass_dir / "assets" / "backgrounds"
+        if assets_dir.exists():
+            return assets_dir
+            
+    # Non-frozen (Development mode): dynamically traverse up to find 'assets/backgrounds'
+    file_path = Path(__file__).resolve()
+    for parent in file_path.parents:
+        potential_assets = parent / "assets" / "backgrounds"
+        if potential_assets.exists():
+            return potential_assets
+            
+    # Fallback to standard relative structure
+    return Path(__file__).resolve().parent.parent.parent / "assets" / "backgrounds"
+
 def load_scene_themes():
     themes = {
         "user image": {
@@ -43,10 +72,17 @@ def load_scene_themes():
         }
     }
     try:
-        project_root = Path(__file__).resolve().parent.parent.parent
-        bg_dir = project_root / "assets" / "backgrounds"
+        # 1. Determine the backgrounds directory dynamically
+        if getattr(sys, 'frozen', False):
+            # Running inside a compiled executable bundle (PyInstaller)
+            exe_dir = Path(sys.executable).resolve().parent
+            bg_dir = exe_dir / "assets" / "backgrounds"
+        else:
+            # Running in local development mode
+            project_root = Path(__file__).resolve().parent.parent.parent
+            bg_dir = project_root / "assets" / "backgrounds"
+
         bg_dir.mkdir(parents=True, exist_ok=True)
-        
         for ext in ('*.png', '*.jpg', '*.jpeg', '*.webp', '*.bmp'):
             for img_path in bg_dir.glob(ext):
                 scene_name = img_path.stem.lower()
@@ -60,7 +96,7 @@ def load_scene_themes():
     except Exception:
         pass
     return themes
-
+    
 SCENE_THEMES = load_scene_themes()
 
 class BackgroundEngine:
