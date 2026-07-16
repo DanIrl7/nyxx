@@ -2,7 +2,7 @@
 
 A terminal-based directory navigator built with Python and curses. Navigate your filesystem, save frequently visited locations, store reusable shell commands, and customise your terminal background — all without leaving the keyboard.
 
-<img width="1501" height="748" alt="image" src="https://github.com/user-attachments/assets/540d3c0d-66b4-40e0-af3b-d01d7c4b20e1" />
+<img width="1549" height="740" alt="5CmVe2CcQ3" src="https://github.com/user-attachments/assets/596eb2aa-2d6f-476e-9ef1-71158511cea1" />
 
 
 
