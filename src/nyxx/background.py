@@ -1,7 +1,6 @@
 import sys
 import os
 import curses
-import numpy as np
 from pathlib import Path
 
 QUAD_PIXEL_DICT = {
@@ -162,8 +161,8 @@ class BackgroundEngine:
         self._generate_scene(rows, cols)
 
     def _generate_scene(self, rows, cols):
-        self.fb = np.zeros((rows * 2, cols * 2), dtype=np.uint8)
-        self.cb = np.zeros((rows,     cols),     dtype=np.uint8)
+        self.fb = [[0] * (cols * 2) for _ in range(rows * 2)]
+        self.cb = [[0] * cols for _ in range(rows)]
 
         build_fn = self.scene_theme.get("build_fn")
         builders = {
@@ -172,20 +171,25 @@ class BackgroundEngine:
         builder = builders.get(build_fn)
         builder(rows, cols)
 
-    
+    @staticmethod
+    def _fill2d(grid, value):
+        for row in grid:
+            for i in range(len(row)):
+                row[i] = value
+
     def _build_user_image(self, rows, cols):
-        self.fb.fill(0)
-        self.cb.fill(0)
+        self._fill2d(self.fb, 0)
+        self._fill2d(self.cb, 0)
         if not self.user_image_path:
             return
-        
+
         try:
             import sys
             from pathlib import Path
             project_root = Path(__file__).resolve().parent.parent.parent
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
-            
+
             from files.image_process import process_image_for_terminal
             cache_key = (self.user_image_path, cols, rows)
             if getattr(self, "_img_cache_key", None) != cache_key:
@@ -203,26 +207,39 @@ class BackgroundEngine:
                 img     = self._cached_img
                 palette = self._cached_palette
             self.user_image_palette = palette
-            
+
             palette_key = tuple(tuple(c) for c in palette)
             if getattr(self, "_cached_palette_key", None) != palette_key:
                 self._register_user_image_combinations(palette)
                 self._cached_palette_key = palette_key
-            
-            px_array = np.array(img, dtype=np.uint8)
 
-            top_pixels    = px_array[0::2, :]
-            bottom_pixels = px_array[1::2, :]
+            # img is the quantized "P" mode image from process_image_for_terminal;
+            # each pixel value is a palette index (0..13), not RGB.
+            pixels = img.load()
+            img_w, img_h = img.size
+            rows_avail = min(rows, img_h // 2)
+            cols_avail = min(cols, img_w)
 
-            self.cb[:rows, :cols] = (top_pixels[:rows] * 14 + bottom_pixels[:rows]).astype(np.uint8)
+            for r in range(rows_avail):
+                cb_row = self.cb[r]
+                top_y = 2 * r
+                bottom_y = 2 * r + 1
+                for c in range(cols_avail):
+                    cb_row[c] = pixels[c, top_y] * 14 + pixels[c, bottom_y]
 
-            self.fb[0::2, :] = 0
-            self.fb[1::2, :] = 1
-                    
+            for i in range(0, len(self.fb), 2):
+                row = self.fb[i]
+                for c in range(len(row)):
+                    row[c] = 0
+            for i in range(1, len(self.fb), 2):
+                row = self.fb[i]
+                for c in range(len(row)):
+                    row[c] = 1
+
         except Exception as e:
             self.load_error = str(e)
-            self.fb.fill(0)
-            self.cb.fill(0)
+            self._fill2d(self.fb, 0)
+            self._fill2d(self.cb, 0)
 
     def _register_user_image_combinations(self, palette):
         if not palette: return
@@ -295,41 +312,42 @@ class BackgroundEngine:
         
     def _blit_scene(self):
         rows, cols = self.max_y, self.max_x
-        rows = min(rows - 1, self.fb.shape[0] // 2)  # -1 avoids bottom-right curses error
-        cols = min(cols - 1, self.fb.shape[1] // 2)
+        fb_rows = len(self.fb)
+        fb_cols = len(self.fb[0]) if fb_rows else 0
+        rows = min(rows - 1, fb_rows // 2)  # -1 avoids bottom-right curses error
+        cols = min(cols - 1, fb_cols // 2)
 
-        # ── Vectorised quad-pixel encoding ─────────────────────────────
-        TL = self.fb[0::2, 0::2][:rows, :cols]
-        TR = self.fb[0::2, 1::2][:rows, :cols]
-        BL = self.fb[1::2, 0::2][:rows, :cols]
-        BR = self.fb[1::2, 1::2][:rows, :cols]
-        quad_idx = (TL * 8 + TR * 4 + BL * 2 + BR).astype(np.uint8)
-
-        cb_slice = self.cb[:rows, :cols]
-
-        # ── Precompute per-row string buffers ───────────────────────────
-        # Build a lookup: pair_id → curses attr integer (computed once, not per cell)
-        # Max pair index in cb is 14*14-1 = 195, so pair_ids run BASE_PAIR to BASE_PAIR+195
+        # attr for a given color-pair index is looked up once per distinct
+        # value seen, not recomputed on every cell
         bold_flags = getattr(self, "_pair_bold_flags", {})
-        max_pair_idx = int(cb_slice.max()) + 1 if cb_slice.size > 0 else 1
         attr_cache = {}
-        for idx in range(max_pair_idx):
-            pid = BASE_PAIR + idx
-            a = curses.color_pair(pid)
-            if bold_flags.get(pid, False):
-                a |= curses.A_BOLD
-            attr_cache[idx] = a
 
         # ── Terminal I/O loop — Python overhead here is unavoidable ────
         addstr = self.stdscr.addstr   # local binding avoids attribute lookup per call
         glyph_lut = QUAD_PIXEL_DICT   # local binding
 
         for r in range(rows):
-            row_quad = quad_idx[r]
-            row_cb   = cb_slice[r]
+            top_row    = self.fb[2 * r]
+            bottom_row = self.fb[2 * r + 1]
+            cb_row     = self.cb[r]
             for c in range(cols):
+                tl = top_row[2 * c]
+                tr = top_row[2 * c + 1]
+                bl = bottom_row[2 * c]
+                br = bottom_row[2 * c + 1]
+                quad = tl * 8 + tr * 4 + bl * 2 + br
+
+                pair_idx = cb_row[c]
+                attr = attr_cache.get(pair_idx)
+                if attr is None:
+                    pid = BASE_PAIR + pair_idx
+                    attr = curses.color_pair(pid)
+                    if bold_flags.get(pid, False):
+                        attr |= curses.A_BOLD
+                    attr_cache[pair_idx] = attr
+
                 try:
-                    addstr(r, c, glyph_lut[row_quad[c]], attr_cache[row_cb[c]])
+                    addstr(r, c, glyph_lut[quad], attr)
                 except curses.error:
                     pass
 

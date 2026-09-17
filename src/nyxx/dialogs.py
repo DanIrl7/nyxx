@@ -6,8 +6,6 @@ terminal, then restore curses state afterwards.
 import curses
 import os
 import subprocess
-import tkinter as tk
-from tkinter import colorchooser
 
 
 def pick_image_file(initial_path=""):
@@ -47,6 +45,11 @@ def _rgb_to_xterm(r, g, b):
 
 
 def pick_color_gui():
+    # Imported lazily: tkinter costs real startup time and most sessions
+    # never open the color picker.
+    import tkinter as tk
+    from tkinter import colorchooser
+
     curses.def_prog_mode()
     curses.endwin()
 

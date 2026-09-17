@@ -1,5 +1,4 @@
 import curses
-import pyfiglet
 from .config import get as config_get, set as config_set
 
 
@@ -228,8 +227,14 @@ class UIEngine:
         return text
 
     def get_logo_lines(self):
-        fig = pyfiglet.figlet_format("nyxx", font="banner3-D")
-        return fig.splitlines()
+        # pyfiglet costs real import time and isn't needed unless the home
+        # screen's logo is actually shown, so import it lazily; the
+        # rendered banner never changes at runtime, so cache it too.
+        if not hasattr(self, "_logo_lines_cache"):
+            import pyfiglet
+            fig = pyfiglet.figlet_format("nyxx", font="banner3-D")
+            self._logo_lines_cache = fig.splitlines()
+        return self._logo_lines_cache
 
     def draw_panel(self, lines, footer_lines=None):
         padding_x = 3

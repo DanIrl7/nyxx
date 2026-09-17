@@ -2,6 +2,5 @@
 colorama>=0.4.6
 pyfiglet>=1.0.4
 pillow>=12.3.0
-numpy>=2.5.0
 windows-curses; sys_platform == 'win32'
 pytest>=9.1.1
