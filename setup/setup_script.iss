@@ -46,7 +46,13 @@ Name: "{autodesktop}\Nyxx"; Filename: "{app}\Nyxx.exe"; Tasks: desktopicon; Icon
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app}\shims;{olddata};{app}"; Flags: preservestringtype; Check: NotOnPath
 
 [Run]
-Filename: "{app}\Nyxx.exe"; Description: "{cm:LaunchProgram,Nyxx}"; Flags: nowait postinstall skipifsilent
+; Launch through cmd.exe (via the shim's full path, not bare "nyxx" —
+; PATH was just updated in [Registry] above, but this still-running
+; installer process's own environment block won't see that change) so
+; a fresh install's first launch is a real terminal session with a
+; working nyxx command, not a bare console window with no shell wrapper
+; behind it to act on cd/exec.
+Filename: "{cmd}"; Parameters: "/k ""{app}\shims\nyxx.bat"""; Description: "{cm:LaunchProgram,Nyxx}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 // Helper function to check if {app} is already added to the user's Path environment variable
