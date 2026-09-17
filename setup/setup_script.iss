@@ -39,8 +39,11 @@ Name: "{autoprograms}\Nyxx"; Filename: "{app}\Nyxx.exe"; IconFilename: "{app}\as
 Name: "{autodesktop}\Nyxx"; Filename: "{app}\Nyxx.exe"; Tasks: desktopicon; IconFilename: "{app}\assets\icon.ico"
 
 [Registry]
-; Standard: Adds the installation directory to the user's PATH environment variable (guarded by duplicate check function)
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Flags: preservestringtype; Check: NotOnPath
+; {app}\shims is listed *before* {app} itself so cmd.exe finds nyxx.bat
+; ahead of Nyxx.exe on PATH — that's what gives cmd.exe a working `nyxx`
+; command (see nyxx.bat below and CurStepChanged for why cmd.exe needs
+; this and PowerShell/Bash don't).
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app}\shims;{olddata};{app}"; Flags: preservestringtype; Check: NotOnPath
 
 [Run]
 Filename: "{app}\Nyxx.exe"; Description: "{cm:LaunchProgram,Nyxx}"; Flags: nowait postinstall skipifsilent
@@ -94,6 +97,45 @@ begin
   end;
 end;
 
+// Writes the cmd.exe shim to {app}\shims\nyxx.bat. Unlike the PowerShell
+// profile / .bashrc integrations above, this isn't appended into a file
+// the user owns — it's our own file, so it's simply (re)written in full
+// every install rather than guarded against duplicate content.
+//
+// cmd.exe runs a .bat file typed at the prompt in the SAME process
+// rather than spawning a child shell for it, so a plain script here can
+// `cd` the calling prompt directly — no profile-function trick needed,
+// just a script that wins the PATH lookup over Nyxx.exe itself (see the
+// [Registry] section: {app}\shims is listed ahead of {app}).
+procedure WriteCmdShim();
+var
+  CmdLines: TArrayOfString;
+  ShimPath: String;
+begin
+  SetArrayLength(CmdLines, 17);
+  CmdLines[0]  := '@echo off';
+  CmdLines[1]  := '"' + ExpandConstant('{app}') + '\Nyxx.exe" %*';
+  CmdLines[2]  := '';
+  CmdLines[3]  := 'set "NYXX_ACTION_FILE=%USERPROFILE%\.nyxx\action"';
+  CmdLines[4]  := 'if not exist "%NYXX_ACTION_FILE%" goto :eof';
+  CmdLines[5]  := '';
+  CmdLines[6]  := 'set "NYXX_ACTION="';
+  CmdLines[7]  := 'set /p NYXX_ACTION=<"%NYXX_ACTION_FILE%"';
+  CmdLines[8]  := 'del "%NYXX_ACTION_FILE%" >nul 2>&1';
+  CmdLines[9]  := '';
+  CmdLines[10] := 'if "%NYXX_ACTION:~0,3%"=="CD:" (';
+  CmdLines[11] := '    cd /d "%NYXX_ACTION:~3%" 2>nul || echo nyxx: cd failed: %NYXX_ACTION:~3%';
+  CmdLines[12] := ') else if "%NYXX_ACTION:~0,5%"=="EXEC:" (';
+  CmdLines[13] := '    call %NYXX_ACTION:~5%';
+  CmdLines[14] := ') else (';
+  CmdLines[15] := '    echo nyxx: unexpected action: %NYXX_ACTION%';
+  CmdLines[16] := ')';
+
+  ShimPath := ExpandConstant('{app}') + '\shims\nyxx.bat';
+  ForceDirectories(ExtractFilePath(ShimPath));
+  SaveStringsToFile(ShimPath, CmdLines, False);
+end;
+
 // Runs automatically at the end of the installation process
 procedure CurStepChanged(CurStep: TSetupStep);
 var
@@ -104,6 +146,8 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    WriteCmdShim();
+
     // Attempt to resolve home directory (~ or %USERPROFILE%)
     UserHome := GetEnv('USERPROFILE');
     if UserHome = '' then

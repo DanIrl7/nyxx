@@ -6,6 +6,7 @@ if not getattr(sys, 'frozen', False):
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 # Now import and run the package normally
 from nyxx.main import run_tui
+from nyxx.shell_actions import write_shell_action
 import argparse
 
 if __name__ == '__main__':
@@ -19,14 +20,15 @@ if __name__ == '__main__':
     parser.add_argument("name", nargs="?", default=None)
     args = parser.parse_args()
 
-    # Handle direct CLI lookups
+    # Handle direct CLI lookups. Signalled to the shell wrapper via the
+    # ~/.nyxx/action file, same as every other CD:/EXEC: path (the TUI
+    # included) — not stdout, which no wrapper reads anymore.
     if args.name and args.name != "add":
         if args.subcommand == "jump":
             from nyxx.jumpstore import find_jump
-            import os
             entry = find_jump(args.name)
             if entry:
-                print("CD:" + os.path.expanduser(entry["path"]), flush=True)
+                write_shell_action("CD", os.path.expanduser(entry["path"]))
             else:
                 print(f"nyxx: no jump named '{args.name}'", file=sys.stderr)
                 sys.exit(1)
@@ -34,7 +36,7 @@ if __name__ == '__main__':
             from nyxx.memostore import find_memo
             entry = find_memo(args.name)
             if entry:
-                print("EXEC:" + entry["cmd"], flush=True)
+                write_shell_action("EXEC", entry["cmd"])
             else:
                 print(f"nyxx: no memo named '{args.name}'", file=sys.stderr)
                 sys.exit(1)

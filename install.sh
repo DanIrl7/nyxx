@@ -123,31 +123,23 @@ function nyxx {
     \$env:PYTHONPATH = \$projectRoot
     \$env:NYXX_CWD   = (Get-Location).Path
 
-    if ((\$args[0] -eq 'jump' -and \$args[1] -eq 'add') -or
-        (\$args[0] -eq 'memo' -and \$args[1] -eq 'add')) {
-        & \$pythonExecutable -m src.nyxx.main @args
-        \$env:PYTHONPATH = \$oldPath
-        \$env:NYXX_CWD   = \$oldCwd
-        return
-    }
+    & \$pythonExecutable -m src.nyxx.main @args
 
-    \$output = & \$pythonExecutable -m src.nyxx.main @args 2>\$null
     \$env:PYTHONPATH = \$oldPath
     \$env:NYXX_CWD   = \$oldCwd
 
-    if (-not \$output) { return }
-
-    if (\$output -like "CD:*") {
-        Set-Location \$output.Substring(3)
-        return
+    \$actionFile = "\$HOME/.nyxx/action"
+    if (Test-Path \$actionFile) {
+        \$action = (Get-Content \$actionFile -Raw).Trim()
+        Remove-Item \$actionFile
+        if (\$action -match "^CD:(.*)") {
+            Set-Location \$Matches[1].Trim()
+        } elseif (\$action -match "^EXEC:(.*)") {
+            Invoke-Expression \$Matches[1].Trim()
+        } else {
+            Write-Host "nyxx: unexpected action: \$action"
+        }
     }
-
-    if (\$output -like "EXEC:*") {
-        Invoke-Expression \$output.Substring(5)
-        return
-    }
-
-    Write-Host "nyxx: unexpected output: \$output"
 }
 EOF_PS
             echo "✓ Nyxx function added to PowerShell profile."
@@ -183,23 +175,21 @@ else
 
 # Nyxx Integration
 nyxx() {
-  # nyxx jump add / nyxx memo add need a live terminal for prompts —
-  # run directly without output capture.
-  if [[ "\$1" == "jump" && "\$2" == "add" ]] || [[ "\$1" == "memo" && "\$2" == "add" ]]; then
-    NYXX_CWD="\$(pwd)" PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@"
-    return
-  fi
-
-  # All other commands: capture the single output line and act on its prefix.
-  # Curses draws to /dev/tty directly so it never pollutes this capture.
   # NYXX_CWD tells Python which directory the user is currently in.
-  local output
-  output=\$(NYXX_CWD="\$(pwd)" PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@" 2>/dev/null)
-  if [[ -n "\$output" ]]; then
-    case "\$output" in
-      CD:*)   cd "\${output#CD:}" ;;
-      EXEC:*) eval "\${output#EXEC:}" ;;
-      *)      cd "\$output" ;;
+  # Run directly (no output capture) so jump add / memo add prompts work
+  # the same as everything else; the result comes back via the action
+  # file, not stdout.
+  NYXX_CWD="\$(pwd)" PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@"
+
+  local action_file="\$HOME/.nyxx/action"
+  if [[ -f "\$action_file" ]]; then
+    local action
+    action=\$(cat "\$action_file")
+    rm -f "\$action_file"
+    case "\$action" in
+      CD:*)   cd "\${action#CD:}" || echo "nyxx: cd failed: \${action#CD:}" ;;
+      EXEC:*) eval "\${action#EXEC:}" ;;
+      *)      echo "nyxx: unexpected action: \$action" ;;
     esac
   fi
 }
