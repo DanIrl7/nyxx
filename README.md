@@ -197,7 +197,7 @@ source ~/.bashrc
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - A terminal with UTF-8 support
 - Windows: `windows-curses` is installed automatically via `requirements.txt`
 - Custom image backgrounds: `Pillow` (`pip install Pillow`) — included in `requirements.txt`

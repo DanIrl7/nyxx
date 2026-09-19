@@ -13,5 +13,5 @@ setuptools.setup(
     author_email="danielmasona7@gmail.com",
     packages=setuptools.find_packages(where="src"),
     package_dir={"": "src"},
-    python_requires=">=3.8",
+    python_requires=">=3.10",
 )
