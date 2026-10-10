@@ -69,7 +69,9 @@ def draw_home(ui, items, logo_enabled=True):
     except curses.error: pass
 
 
-def draw_cd_panel(ui, current_path, items, full_paths, show_hidden):
+def draw_cd_panel(ui, current_path, items, full_paths, show_hidden, message=None):
+    """`message` (an error, or the result of a paste) is shown in place of
+    the path preview line while it's set."""
     curses.curs_set(0)
     max_y, max_x = ui.stdscr.getmaxyx()
     panel_w = min(60, max_x - 4)
@@ -161,12 +163,15 @@ def draw_cd_panel(ui, current_path, items, full_paths, show_hidden):
         ui.stdscr.addstr(preview_y, panel_x, div2, curses.color_pair(ui.BORDER_PAIR))
     except curses.error: pass
 
-    selected_name = items[ui.selection_index] if items else ""
-    if selected_name == "..":
-        preview_path = os.path.dirname(current_path) or "/"
+    if message:
+        preview_text = "! " + ui.truncate(message, inner_w - 2)
     else:
-        preview_path = os.path.join(current_path, selected_name)
-    preview_text = "→ " + ui.truncate(preview_path, inner_w - 2)
+        selected_name = items[ui.selection_index] if items else ""
+        if selected_name == "..":
+            preview_path = os.path.dirname(current_path) or "/"
+        else:
+            preview_path = os.path.join(current_path, selected_name)
+        preview_text = "→ " + ui.truncate(preview_path, inner_w - 2)
     try:
         ui.stdscr.addstr(preview_y + 1, panel_x + 2, preview_text.ljust(inner_w - 2), curses.color_pair(ui.PANEL_HINT_PAIR))
     except curses.error: pass
@@ -177,7 +182,7 @@ def draw_cd_panel(ui, current_path, items, full_paths, show_hidden):
     except curses.error: pass
 
     hidden_hint = ". show-hidden" if not show_hidden else ". hide-hidden"
-    footer_line1 = "[↑↓ move]   [→ enter]  [← back]  [z hint]"
+    footer_line1 = "[↑↓ move]   [→ enter]  [← up]  [z hint]"
     footer_line2 = f" [SPC jump]   {hidden_hint}   [q quit]"
 
     try:
@@ -332,7 +337,7 @@ def draw_help_panel(ui):
         ("General Navigation", ""),
         ("  ↑ / k", "Move selection row up"),
         ("  ↓ / j", "Move selection row down"),
-        ("  ← / h / Back", "Go back / return to Home dashboard"),
+        ("  ← / h / Back", "Up a folder (cd) / back to Home"),
         ("  z", "Toggle this Help menu info"),
         ("  q / Esc", "Quit application fully"),
         ("", ""),
@@ -375,7 +380,9 @@ def draw_help_panel(ui):
     except curses.error: pass
 
 
-def draw_theme_panel(ui, ui_themes, active_ui, logo_enabled=True, scene_names=None, active_scene=None, mode="scenes"):
+def draw_theme_panel(ui, ui_themes, active_ui, logo_enabled=True, scene_names=None, active_scene=None, mode="scenes",
+                     scene_labels=None):
+    """`scene_labels`, if given, are the display names for `scene_names`."""
     if scene_names is None: scene_names = []
     if active_scene is None: active_scene = ""
     curses.curs_set(0)
@@ -419,6 +426,7 @@ def draw_theme_panel(ui, ui_themes, active_ui, logo_enabled=True, scene_names=No
 
     if mode in ("scenes", "ui"):
         names = scene_names if mode == "scenes" else ui_themes
+        labels = scene_labels if mode == "scenes" and scene_labels else names
         active = active_scene if mode == "scenes" else active_ui
 
         visible_rows = footer_row - list_start
@@ -437,7 +445,7 @@ def draw_theme_panel(ui, ui_themes, active_ui, logo_enabled=True, scene_names=No
 
             indicator = "▸ " if selected else "  "
             marker = " ✓" if is_active else "  "
-            line = ui.truncate(f"{indicator}{name}{marker}", inner_w)
+            line = ui.truncate(f"{indicator}{labels[real_index]}{marker}", inner_w)
             attr = curses.color_pair(ui.SELECTION) if selected else curses.color_pair(ui.PANEL_PAIR)
 
             try:
@@ -471,9 +479,14 @@ def draw_theme_panel(ui, ui_themes, active_ui, logo_enabled=True, scene_names=No
 
     try:
         ui.stdscr.addstr(footer_row, start_x, "╠" + "═" * (panel_w - 2) + "╣", curses.color_pair(ui.BORDER_PAIR))
-        footer = "[Tab: switch tab] [⇅⇆: move] [Enter: select] [Esc: back]"
+        footer = "[Tab: switch tab] [↑↓: move] [Enter: select] [←: back]"
         ui.stdscr.addstr(footer_row + 1, start_x + 1, footer.ljust(inner_w), curses.color_pair(ui.PANEL_HINT_PAIR))
     except curses.error: pass
 
     if getattr(ui, "error_message", None):
-        ui.stdscr.addstr(max_y - 2, 0, f" Error: {ui.error_message} ".ljust(max_x), curses.color_pair(ui.YELLOW) | curses.A_BOLD)
+        # One line, short of the last column, so a long message can't wrap
+        # into the bottom-right cell (which makes curses raise).
+        text = ui.truncate(f" Error: {ui.error_message} ", max_x - 1)
+        try:
+            ui.stdscr.addstr(max_y - 2, 0, text.ljust(max_x - 1), curses.color_pair(ui.YELLOW) | curses.A_BOLD)
+        except curses.error: pass

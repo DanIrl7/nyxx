@@ -30,6 +30,18 @@ class TestNavigator:
         for item in result["items"]:
             assert item == ".." or not item.startswith('.')
 
+    def test_unreadable_directory_still_offers_parent(self, tmp_path, monkeypatch):
+        """Without '..' there'd be no way back out of a folder that can't
+        be listed"""
+        def deny(path):
+            raise PermissionError(path)
+        nav = Navigator(str(tmp_path))
+        monkeypatch.setattr(os, "listdir", deny)
+        result = nav.list_items()
+        assert result["success"] is False
+        assert result["items"] == [".."]
+        assert result["error"] == "Permission denied"
+
 class TestPathHandler:
     def test_validate_path_home(self):
         """Home directory should validate as True"""

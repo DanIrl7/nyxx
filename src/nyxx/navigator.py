@@ -62,7 +62,8 @@ class Navigator:
           { "success": bool, "items": [str, ...], "error": str|None }
         Items are plain filenames (not full paths).
         Hidden files are excluded unless show_hidden is True.
-        The '..' entry is always prepended.
+        The '..' entry is always prepended — even when the directory can't
+        be listed, so there's always a way back out of it.
         """
         try:
             raw = os.listdir(self.current_path)
@@ -74,9 +75,9 @@ class Navigator:
             ))
             return {"success": True, "items": items, "error": None}
         except PermissionError:
-            return {"success": False, "items": [], "error": "Permission denied"}
+            return {"success": False, "items": [".."], "error": "Permission denied"}
         except Exception as e:
-            return {"success": False, "items": [], "error": str(e)}
+            return {"success": False, "items": [".."], "error": str(e)}
 
     def go_forward(self, item_name):
         """Navigate into a directory. Returns {"success": bool, "error": str|None}."""

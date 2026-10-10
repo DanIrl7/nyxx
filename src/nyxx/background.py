@@ -3,6 +3,8 @@ import os
 import curses
 from pathlib import Path
 
+from .config import DEFAULTS
+
 QUAD_PIXEL_DICT = {
     0:  " ",  1:  "▗",  2:  "▖",  3:  "▄",
     4:  "▝",  5:  "▐",  6:  "▞",  7:  "▟",
@@ -10,7 +12,11 @@ QUAD_PIXEL_DICT = {
     12: "▀",  13: "▜",  14: "▛",  15: "█",
 }
 
-BASE_PAIR = 8  
+BASE_PAIR = 8
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff")
+
+USER_IMAGE_SCENE = "user image"
 
 VAPORWAVE_PALETTE_256 = [
     (10,   10,   30),    (20,   40,   100),   (30,   150,  250),   
@@ -61,9 +67,15 @@ def get_backgrounds_dir():
     # Fallback to standard relative structure
     return Path(__file__).resolve().parent.parent.parent / "assets" / "backgrounds"
 
+def scene_key(name):
+    """Canonical form of a scene name: lowercase, words separated by single
+    spaces. Saved configs hold either the file-stem form
+    ("pink_cat_sleeping") or the spaced one ("vaporwave sunset")."""
+    return " ".join(str(name).replace("_", " ").lower().split())
+
 def load_scene_themes():
     themes = {
-        "user image": {
+        USER_IMAGE_SCENE: {
             "label": "Browse File...",
             "build_fn": "user_image",
             "palette_256": [],
@@ -82,9 +94,9 @@ def load_scene_themes():
             bg_dir = project_root / "assets" / "backgrounds"
 
         bg_dir.mkdir(parents=True, exist_ok=True)
-        for ext in ('*.png', '*.jpg', '*.jpeg', '*.webp', '*.bmp'):
-            for img_path in bg_dir.glob(ext):
-                scene_name = img_path.stem.lower()
+        for ext in IMAGE_EXTENSIONS:
+            for img_path in bg_dir.glob("*" + ext):
+                scene_name = scene_key(img_path.stem)
                 themes[scene_name] = {
                     "label": img_path.stem.replace("_", " ").title(),
                     "build_fn": "user_image",
@@ -97,6 +109,46 @@ def load_scene_themes():
     return themes
     
 SCENE_THEMES = load_scene_themes()
+
+def resolve_scene(name):
+    """Map a saved scene name onto a SCENE_THEMES key. A name that doesn't
+    match any scene (e.g. its image was deleted) falls back to the default
+    scene, or failing that any bundled image, rather than to the empty
+    "user image" slot, which would leave the screen black."""
+    key = scene_key(name or "")
+    if key in SCENE_THEMES:
+        return key
+    if DEFAULTS["scene_theme"] in SCENE_THEMES:
+        return DEFAULTS["scene_theme"]
+    return next((k for k in SCENE_THEMES if k != USER_IMAGE_SCENE), USER_IMAGE_SCENE)
+
+STANDARD_COLORS = [
+    curses.COLOR_BLACK, curses.COLOR_BLUE, curses.COLOR_CYAN, curses.COLOR_GREEN,
+    curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_WHITE, curses.COLOR_YELLOW,
+]
+
+_STANDARD_RGB = {
+    curses.COLOR_BLACK:   (0, 0, 0),
+    curses.COLOR_RED:     (205, 0, 0),
+    curses.COLOR_GREEN:   (0, 205, 0),
+    curses.COLOR_YELLOW:  (205, 205, 0),
+    curses.COLOR_BLUE:    (0, 0, 238),
+    curses.COLOR_MAGENTA: (205, 0, 205),
+    curses.COLOR_CYAN:    (0, 205, 205),
+    curses.COLOR_WHITE:   (229, 229, 229),
+}
+
+def nearest_standard_color(rgb, color_constants=STANDARD_COLORS):
+    """The basic curses color (one of `color_constants`) closest to `rgb`."""
+    best_color = curses.COLOR_WHITE
+    best_distance = None
+    for color_const in color_constants:
+        cr, cg, cb = _STANDARD_RGB.get(color_const, (255, 255, 255))
+        distance = ((rgb[0] - cr) ** 2) + ((rgb[1] - cg) ** 2) + ((rgb[2] - cb) ** 2)
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_color = color_const
+    return best_color
 
 class BackgroundEngine:
     def __init__(self, stdscr, scene_theme="vaporwave sunset", user_image_path=""):
@@ -113,9 +165,6 @@ class BackgroundEngine:
         self._generate()
 
     def init_bg_colors(self):
-        curses.init_pair(235, curses.COLOR_WHITE, curses.COLOR_BLACK)
-        self.BG_ATTR = curses.color_pair(235)
-        
         scene = self.scene_theme
         self.rich_color = curses.has_colors() and curses.can_change_color() and curses.COLORS >= 256
 
@@ -139,10 +188,9 @@ class BackgroundEngine:
                     pass
 
     def _set_scene(self, name):
-        self.scene_name  = name
-        fallback = list(SCENE_THEMES.keys())[0]
-        self.scene_theme = SCENE_THEMES.get(name, SCENE_THEMES[fallback])
-        
+        self.scene_name  = resolve_scene(name)
+        self.scene_theme = SCENE_THEMES[self.scene_name]
+
         if "image_path" in self.scene_theme:
             self.user_image_path = self.scene_theme["image_path"]
 
@@ -178,6 +226,7 @@ class BackgroundEngine:
                 row[i] = value
 
     def _build_user_image(self, rows, cols):
+        self.load_error = None  # don't let an earlier image's failure stick
         self._fill2d(self.fb, 0)
         self._fill2d(self.cb, 0)
         if not self.user_image_path:
@@ -258,11 +307,6 @@ class BackgroundEngine:
                 except curses.error:
                     pass
 
-        fallback_colors = [
-            curses.COLOR_BLACK, curses.COLOR_BLUE, curses.COLOR_CYAN, curses.COLOR_GREEN,
-            curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_WHITE, curses.COLOR_YELLOW,
-        ]
-
         for top_idx in range(14):
             for bottom_idx in range(14):
                 pair_idx = (top_idx * 14) + bottom_idx
@@ -279,8 +323,8 @@ class BackgroundEngine:
                     r_fg, g_fg, b_fg = palette[bottom_idx]
                     r_bg, g_bg, b_bg = palette[top_idx]
                     
-                    fg_const = self._nearest_standard_color((r_fg, g_fg, b_fg), fallback_colors)
-                    bg_const = self._nearest_standard_color((r_bg, g_bg, b_bg), fallback_colors)
+                    fg_const = nearest_standard_color((r_fg, g_fg, b_fg))
+                    bg_const = nearest_standard_color((r_bg, g_bg, b_bg))
                     
                     self._pair_bold_flags[pair_id] = max(r_fg, g_fg, b_fg) > 128
                     try:
@@ -288,28 +332,6 @@ class BackgroundEngine:
                     except curses.error:
                         pass
 
-    def _nearest_standard_color(self, rgb, color_constants):
-        stdlib_rgb = {
-            curses.COLOR_BLACK:   (0, 0, 0),
-            curses.COLOR_RED:     (205, 0, 0),
-            curses.COLOR_GREEN:   (0, 205, 0),
-            curses.COLOR_YELLOW:  (205, 205, 0),
-            curses.COLOR_BLUE:    (0, 0, 238),
-            curses.COLOR_MAGENTA: (205, 0, 205),
-            curses.COLOR_CYAN:    (0, 205, 205),
-            curses.COLOR_WHITE:   (229, 229, 229),
-        }
-
-        best_color = curses.COLOR_WHITE
-        best_distance = None
-        for color_const in color_constants:
-            cr, cg, cb = stdlib_rgb.get(color_const, (255, 255, 255))
-            distance = ((rgb[0] - cr) ** 2) + ((rgb[1] - cg) ** 2) + ((rgb[2] - cb) ** 2)
-            if best_distance is None or distance < best_distance:
-                best_distance = distance
-                best_color = color_const
-        return best_color
-        
     def _blit_scene(self):
         rows, cols = self.max_y, self.max_x
         fb_rows = len(self.fb)

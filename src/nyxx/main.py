@@ -11,7 +11,7 @@ from .jumpstore import list_jumps, add_jump
 from .memostore import list_memos, add_memo
 from .config import get as config_get
 from .app_state import AppState
-from .shell_actions import write_shell_action
+from .shell_actions import write_shell_action, clear_shell_action
 from . import screens
 from . import handlers
 
@@ -28,14 +28,14 @@ logging.basicConfig(
 
 def main(stdscr, initial_state="home"):
     curses.curs_set(0)
-    stdscr.nodelay(True)
+    # getch() is left blocking on purpose: nothing on screen changes until
+    # a key (or a resize) arrives, so polling would only burn a CPU core
+    # redrawing the same frame.
 
     ui = UIEngine(stdscr)
     app = AppState(initial_state)
 
-    app.scene_theme = config_get("scene_theme") or "user image"
-    app.ui_theme = config_get("ui_theme")
-    ui.apply_ui_theme(app.ui_theme)
+    app.ui_theme = ui.theme_name
 
     app.logo_enabled = config_get("logo_enabled")
     if app.logo_enabled is None:
@@ -43,9 +43,11 @@ def main(stdscr, initial_state="home"):
 
     bg_engine = BackgroundEngine(
         stdscr,
-        scene_theme=app.scene_theme,
+        scene_theme=config_get("scene_theme"),
         user_image_path=config_get("user_image_path") or "",
     )
+    # The engine maps the saved name onto a scene that actually exists.
+    app.scene_theme = bg_engine.scene_name
 
     if getattr(bg_engine, "load_error", None):
         ui.error_message = bg_engine.load_error
@@ -57,8 +59,8 @@ def main(stdscr, initial_state="home"):
     ui.selection_index = 0
 
     while app.running:
-        items = full_paths = jumps = memos = ui_themes = scene_names = None
-        current_path = None
+        items = full_paths = jumps = memos = ui_themes = scene_names = scene_labels = None
+        current_path = nav_error = None
 
         # -------------------------------
         # Per-state data
@@ -82,7 +84,7 @@ def main(stdscr, initial_state="home"):
                 for i in items
             ]
             current_path = navigator.get_current_path()
-            ui.error_message = None if nav_data["success"] else nav_data["error"]
+            nav_error = nav_data["error"]
 
         elif app.state == "jump":
             jumps = list_jumps()
@@ -93,6 +95,13 @@ def main(stdscr, initial_state="home"):
         elif app.state == "theme":
             ui_themes = list(ui.UI_THEMES.keys())
             scene_names = list(SCENE_THEMES.keys())
+            scene_labels = [SCENE_THEMES[name]["label"] for name in scene_names]
+
+        # Keep the selection inside the list if it shrank since the last
+        # frame (files removed from another terminal, an entry deleted, ...).
+        shown = {"home": items, "nav": items, "jump": jumps, "memo": memos}.get(app.state)
+        if shown is not None:
+            ui.selection_index = min(ui.selection_index, max(0, len(shown) - 1))
 
         # -------------------------------
         # Rendering
@@ -103,7 +112,10 @@ def main(stdscr, initial_state="home"):
         if app.state == "home":
             screens.draw_ui(ui, "Nyxx Home", items, logo_enabled=app.logo_enabled)
         elif app.state == "nav":
-            screens.draw_cd_panel(ui, current_path, items, full_paths, navigator.show_hidden)
+            screens.draw_cd_panel(
+                ui, current_path, items, full_paths, navigator.show_hidden,
+                message=nav_error or ui.error_message,
+            )
         elif app.state == "jump":
             screens.draw_jump_panel(ui, jumps, app.confirm_delete)
         elif app.state == "memo":
@@ -111,7 +123,8 @@ def main(stdscr, initial_state="home"):
         elif app.state == "theme":
             screens.draw_theme_panel(
                 ui, ui_themes, app.ui_theme, app.logo_enabled,
-                scene_names=scene_names, active_scene=app.scene_theme, mode=app.theme_mode,
+                scene_names=scene_names, scene_labels=scene_labels,
+                active_scene=app.scene_theme, mode=app.theme_mode,
             )
         elif app.state == "help":
             screens.draw_help_panel(ui)
@@ -128,21 +141,18 @@ def main(stdscr, initial_state="home"):
             bg_engine.handle_resize()
             continue
 
+        if app.state == "help":
+            # Any key closes the overlay, as its footer says — q/Esc included.
+            app.state = app.previous_state
+            continue
+
         if action == "quit":
             app.running = False
             continue
 
         if action == "help":
-            if app.state != "help":
-                app.previous_state = app.state
-                app.state = "help"
-            else:
-                app.state = app.previous_state
-            continue
-
-        if app.state == "help":
-            if action is not None:
-                app.state = app.previous_state
+            app.previous_state = app.state
+            app.state = "help"
             continue
 
         if app.state == "home":
@@ -165,6 +175,10 @@ def run_tui(initial_state="home"):
 
 
 def run_cli():
+    # Whatever this run does, a leftover action from an earlier one must
+    # not be what the shell wrapper acts on afterwards.
+    clear_shell_action()
+
     parser = argparse.ArgumentParser(description="Nyxx terminal navigator", add_help=False)
     parser.add_argument("subcommand", nargs="?", default="home")
     parser.add_argument("name", nargs="?", default=None)
@@ -203,8 +217,9 @@ def run_cli():
             name = input("Jump name: ").strip()
             desc = input("Description: ").strip()
             path = input("Path (leave blank for current dir): ").strip()
-            if not path:
-                path = os.getcwd()
+            # Store it absolute: a relative path would otherwise be resolved
+            # against wherever the jump happens to be used from.
+            path = os.path.abspath(os.path.expanduser(path)) if path else os.getcwd()
             success, err = add_jump(name, desc, path)
             print(f"Jump '{name}' saved." if success else f"Error: {err}")
         elif args.subcommand == "memo":

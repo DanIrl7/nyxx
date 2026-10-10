@@ -2,20 +2,23 @@
 import os
 import json
 
+from .storage import backup_if_unreadable
+
 MEMOS_PATH = os.path.expanduser("~/.nyxx/memos.json")
 
 def _load():
     """Load memos list from disk. Returns [] if file missing or invalid."""
     try:
-        with open(MEMOS_PATH, "r") as f:
+        with open(MEMOS_PATH, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, ValueError):  # ValueError: bad JSON or encoding
         return []
 
 def _save(memos):
     """Write memos list to disk."""
     os.makedirs(os.path.dirname(MEMOS_PATH), exist_ok=True)
+    backup_if_unreadable(MEMOS_PATH, list)
     with open(MEMOS_PATH, "w") as f:
         json.dump(memos, f, indent=2)
 
@@ -32,6 +35,8 @@ def find_memo(name):
 
 def add_memo(name, desc, cmd):
     """Add or overwrite a memo. Returns (success, error_message)."""
+    if not name:
+        return False, "Name can't be empty"
     memos = _load()
     memos = [m for m in memos if m.get("name") != name]
     memos.append({"name": name, "desc": desc, "cmd": cmd})

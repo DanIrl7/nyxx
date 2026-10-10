@@ -1,20 +1,23 @@
 import os
 import json
 
+from .storage import backup_if_unreadable
+
 JUMPS_PATH = os.path.expanduser("~/.nyxx/jumps.json")
 
 def _load():
     """Load jumps list from disk. Returns [] if file missing or invalid."""
     try:
-        with open(JUMPS_PATH, "r") as f:
+        with open(JUMPS_PATH, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, ValueError):  # ValueError: bad JSON or encoding
         return []
 
 def _save(jumps):
     """Write jumps list to disk."""
     os.makedirs(os.path.dirname(JUMPS_PATH), exist_ok=True)
+    backup_if_unreadable(JUMPS_PATH, list)
     with open(JUMPS_PATH, "w") as f:
         json.dump(jumps, f, indent=2)
 
@@ -31,6 +34,8 @@ def find_jump(name):
 
 def add_jump(name, desc, path):
     """Add or overwrite a jump. Returns (success, error_message)."""
+    if not name:
+        return False, "Name can't be empty"
     jumps = _load()
     # Overwrite if name already exists
     jumps = [j for j in jumps if j.get("name") != name]

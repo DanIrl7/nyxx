@@ -5,7 +5,7 @@ import curses
 import os
 
 from .config import get as config_get, set as config_set
-from .dialogs import pick_color_gui, pick_image_file
+from .dialogs import DialogUnavailable, pick_color_gui, pick_image_file
 from .jumpstore import delete_jump
 from .memostore import delete_memo
 from .shell_actions import write_shell_action
@@ -35,6 +35,10 @@ def handle_home_input(app, ui, action, items):
 
 
 def handle_nav_input(app, ui, action, navigator, items, full_paths):
+    if action is not None:
+        # A message (paste result, error) stays up until the next key.
+        ui.error_message = None
+
     if action in ("up", "down"):
         ui.move_selection(action, len(items))
     elif action == "toggle_hidden":
@@ -53,6 +57,8 @@ def handle_nav_input(app, ui, action, navigator, items, full_paths):
             result = navigator.go_forward(items[ui.selection_index])
             if result["success"]:
                 ui.selection_index = 0
+            else:
+                ui.error_message = result["error"]
     elif action == "confirm":
         if items:
             selected = items[ui.selection_index]
@@ -64,7 +70,10 @@ def handle_nav_input(app, ui, action, navigator, items, full_paths):
             write_shell_action("CD", target)
             app.running = False
     elif action == "back":
-        app.state = "home"
+        # ← / h / Backspace go up a folder; only at the filesystem root
+        # do they back out to the Home screen.
+        if not navigator.go_back()["success"]:
+            app.state = "home"
         ui.selection_index = 0
 
 
@@ -106,15 +115,23 @@ def _handle_toggle_selection(app, ui):
         return
 
     key = _TOGGLE_COLOR_KEYS[ui.selection_index - 1]
-    chosen = pick_color_gui()
+    try:
+        chosen = pick_color_gui()
+    except DialogUnavailable as e:
+        ui.error_message = f"Color picker unavailable: {e}"
+        return
     if chosen is not None:
         config_set(key, chosen)
         config_set("ui_theme", "custom")
         app.ui_theme = "custom"
-        ui.refresh_custom_colors()
+        ui.apply_ui_theme("custom")
 
 
 def handle_theme_input(app, ui, action, stdscr, bg_engine, ui_themes, scene_names):
+    if action is not None:
+        # A message (load error, missing dialog) stays up until the next key.
+        ui.error_message = None
+
     if action == "tab":
         tabs = ["scenes", "toggles", "ui"]
         index = tabs.index(app.theme_mode)
@@ -137,6 +154,9 @@ def handle_theme_input(app, ui, action, stdscr, bg_engine, ui_themes, scene_name
                 curses.endwin()
                 try:
                     chosen_path = pick_image_file(config_get("user_image_path") or "")
+                except DialogUnavailable as e:
+                    chosen_path = None
+                    ui.error_message = f"File picker unavailable: {e}"
                 finally:
                     curses.reset_prog_mode()
                     stdscr.refresh()
@@ -146,14 +166,12 @@ def handle_theme_input(app, ui, action, stdscr, bg_engine, ui_themes, scene_name
                     config_set("user_image_path", chosen_path)
                     bg_engine.user_image_path = chosen_path
                     bg_engine.set_scene(selected_scene)
-                    if getattr(bg_engine, "load_error", None):
-                        ui.error_message = bg_engine.load_error
+                    ui.error_message = bg_engine.load_error
             else:
                 app.scene_theme = selected_scene
                 config_set("scene_theme", selected_scene)
                 bg_engine.set_scene(selected_scene)
-                if getattr(bg_engine, "load_error", None):
-                    ui.error_message = bg_engine.load_error
+                ui.error_message = bg_engine.load_error
 
         elif app.theme_mode == "toggles":
             _handle_toggle_selection(app, ui)

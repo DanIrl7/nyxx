@@ -1,5 +1,29 @@
 import curses
-from .config import get as config_get, set as config_set
+from .background import nearest_standard_color
+from .config import get as config_get
+
+# Custom panel colors are saved as xterm-256 indices (dialogs.pick_color_gui).
+# Where the terminal lets us redefine colors, each is loaded into its own
+# slot below instead of being used by index: the background image redefines
+# colors 16–29 for its palette (background.py), which would otherwise
+# repaint any custom color that happens to fall in that range.
+_CUSTOM_COLOR_SLOTS = {
+    "panel_color": 30, "text_color": 31, "highlight_panel_color": 32,
+    "highlight_text_color": 33, "border_fg": 34, "border_bg": 35,
+}
+
+_XTERM_CUBE_STEPS = (0, 95, 135, 175, 215, 255)
+
+
+def _xterm_to_rgb(index):
+    """RGB (0–255) of xterm-256 palette entry `index` (16–255)."""
+    if index >= 232:
+        level = 8 + (index - 232) * 10
+        return level, level, level
+    index -= 16
+    return (_XTERM_CUBE_STEPS[index // 36],
+            _XTERM_CUBE_STEPS[(index // 6) % 6],
+            _XTERM_CUBE_STEPS[index % 6])
 
 
 class UIEngine:
@@ -91,6 +115,9 @@ class UIEngine:
         self.BORDER_PAIR = 6
         self.PANEL_HINT_PAIR = 7
 
+        # Error/status lines are drawn with this pair.
+        curses.init_pair(self.YELLOW, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+
         _vw8 = [
             curses.COLOR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLUE,
             curses.COLOR_CYAN, curses.COLOR_CYAN, curses.COLOR_CYAN,
@@ -104,52 +131,75 @@ class UIEngine:
         for _i, _c in enumerate(_vw8):
             curses.init_pair(8 + _i, _c, curses.COLOR_BLACK)
 
-        self.apply_ui_theme(config_get("ui_theme") or "cyber cyan")
-        self.refresh_custom_colors()
+        self.theme_name = "cyber cyan"
+        self.apply_ui_theme(config_get("ui_theme"))
 
     # ------------------------------------------------------------------
     # Theming
     # ------------------------------------------------------------------
 
-    def refresh_custom_colors(self):
-        p_bg_name = config_get("panel_color")
-        text_col_name = config_get("text_color")
-        hl_bg_name = config_get("highlight_panel_color")
-        hl_fg_name = config_get("highlight_text_color")
-        b_fg_name = config_get("border_fg")
-        b_bg_name = config_get("border_bg")
-
-        def _resolve(val, default):
-            if isinstance(val, int):
-                return val
-            if isinstance(val, str) and val:
-                return self.COLOR_MAP.get(val.upper(), default)
+    def _custom_color(self, key, default):
+        """The custom color saved under `key` (an xterm-256 index, or a
+        legacy color name), as a curses color this terminal can show."""
+        val = config_get(key)
+        if isinstance(val, str) and val:
+            return self.COLOR_MAP.get(val.upper(), default)
+        if not isinstance(val, int) or not 0 <= val <= 255:
             return default
+        if val < 16:
+            # The 8 basic colors and their bright variants; on an 8-color
+            # terminal fall back from the bright one to the basic one.
+            return val if val < curses.COLORS else val % 8
 
-        self.UI_THEMES["custom"] = {
-            "bg": _resolve(p_bg_name, curses.COLOR_BLACK),
-            "text": _resolve(text_col_name, curses.COLOR_WHITE),
-            "highlight": _resolve(hl_bg_name, curses.COLOR_CYAN),
-            "hint": curses.COLOR_YELLOW,
-            "border": _resolve(b_fg_name, curses.COLOR_WHITE),
-            "hl_fg": _resolve(hl_fg_name, curses.COLOR_BLACK),
-            "b_bg": _resolve(b_bg_name, curses.COLOR_BLACK)
-        }
+        rgb = _xterm_to_rgb(val)
+        if curses.has_colors() and curses.can_change_color() and curses.COLORS >= 256:
+            slot = _CUSTOM_COLOR_SLOTS[key]
+            try:
+                curses.init_color(slot, *(c * 1000 // 255 for c in rgb))
+                return slot
+            except curses.error:
+                pass
+        if val < curses.COLORS:
+            return val
+        # Fewer colors than the one that was picked (e.g. TERM=xterm):
+        # use the closest basic color rather than fail to start.
+        return nearest_standard_color(rgb)
 
-        theme_name = config_get("ui_theme") or "cyber cyan"
-        theme = self.UI_THEMES.get(theme_name, self.UI_THEMES["cyber cyan"])
+    def refresh_custom_colors(self):
+        # Only while the custom theme is in use: resolving can redefine
+        # terminal colors, which some terminals keep after Nyxx exits.
+        if self.theme_name == "custom":
+            self.UI_THEMES["custom"] = {
+                "bg": self._custom_color("panel_color", curses.COLOR_BLACK),
+                "text": self._custom_color("text_color", curses.COLOR_WHITE),
+                "highlight": self._custom_color("highlight_panel_color", curses.COLOR_CYAN),
+                "hint": curses.COLOR_YELLOW,
+                "border": self._custom_color("border_fg", curses.COLOR_WHITE),
+                "hl_fg": self._custom_color("highlight_text_color", curses.COLOR_BLACK),
+                "b_bg": self._custom_color("border_bg", curses.COLOR_BLACK)
+            }
 
-        curses.init_pair(self.PANEL_PAIR, theme["text"], theme["bg"])
-        curses.init_pair(self.BORDER_PAIR, theme["border"], theme.get("b_bg", curses.COLOR_BLACK))
-        curses.init_pair(self.SELECTION, theme.get("hl_fg", curses.COLOR_BLACK), theme["highlight"])
-        curses.init_pair(self.PANEL_HINT_PAIR, theme["hint"], theme["bg"])
+        theme = self.UI_THEMES.get(self.theme_name, self.UI_THEMES["cyber cyan"])
 
-        curses.init_pair(235, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        for pair, fg, bg in (
+            (self.PANEL_PAIR, theme["text"], theme["bg"]),
+            (self.BORDER_PAIR, theme["border"], theme.get("b_bg", curses.COLOR_BLACK)),
+            (self.SELECTION, theme.get("hl_fg", curses.COLOR_BLACK), theme["highlight"]),
+            (self.PANEL_HINT_PAIR, theme["hint"], theme["bg"]),
+        ):
+            try:
+                curses.init_pair(pair, fg, bg)
+            except curses.error:
+                pass
+
         self.error_message = None
 
     def apply_ui_theme(self, theme_name):
-        if theme_name and theme_name in self.UI_THEMES:
-            config_set("ui_theme", theme_name)
+        """Switch the on-screen theme. Doesn't save anything — callers that
+        want the choice remembered write it to the config themselves — so
+        starting Nyxx never rewrites config.json."""
+        if theme_name in self.UI_THEMES:
+            self.theme_name = theme_name
         self.refresh_custom_colors()
 
     def apply_custom_colors(self, panel_color_name=None, border_color_name=None):

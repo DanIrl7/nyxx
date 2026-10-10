@@ -54,3 +54,24 @@ class TestJumpstore:
         ok, err = jumpstore.delete_jump("nope")
         assert ok is False
         assert "nope" in err
+
+    def test_add_jump_rejects_empty_name(self, tmp_path):
+        self._use_tmp_path(tmp_path)
+        ok, err = jumpstore.add_jump("", "desc", "/path")
+        assert ok is False
+        assert jumpstore.list_jumps() == []
+
+    def test_add_jump_backs_up_unreadable_file(self, tmp_path):
+        """Adding to a jumps.json that doesn't parse must not silently
+        replace everything in it with the one new jump."""
+        self._use_tmp_path(tmp_path)
+        broken = '[{"name": "work", "desc": "", "path": "/work"},]'
+        with open(jumpstore.JUMPS_PATH, "w") as f:
+            f.write(broken)
+
+        ok, err = jumpstore.add_jump("code", "desc", "/code")
+
+        assert ok is True
+        assert [j["name"] for j in jumpstore.list_jumps()] == ["code"]
+        with open(jumpstore.JUMPS_PATH + ".bak") as f:
+            assert f.read() == broken

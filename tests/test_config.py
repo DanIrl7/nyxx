@@ -51,3 +51,23 @@ class TestConfig:
     def test_get_returns_default_for_unset_key(self, tmp_path):
         self._use_tmp_path(tmp_path)
         assert config.get("bg_mode") == config.DEFAULTS["bg_mode"]
+
+    def test_set_backs_up_unreadable_file_instead_of_wiping_it(self, tmp_path):
+        """A hand-edited config with a typo is read as defaults; saving over
+        it must keep the user's original around rather than lose it."""
+        self._use_tmp_path(tmp_path)
+        broken = '{"user_image_path": "C:/pics/cat.png",}'  # trailing comma
+        with open(config.CONFIG_PATH, "w") as f:
+            f.write(broken)
+
+        config.set("ui_theme", "matrix green")
+
+        assert config.get("ui_theme") == "matrix green"
+        with open(config.CONFIG_PATH + ".bak") as f:
+            assert f.read() == broken
+
+    def test_set_on_valid_file_makes_no_backup(self, tmp_path):
+        self._use_tmp_path(tmp_path)
+        config.set("ui_theme", "matrix green")
+        config.set("ui_theme", "dracula")
+        assert not os.path.exists(config.CONFIG_PATH + ".bak")

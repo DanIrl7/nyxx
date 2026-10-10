@@ -1,6 +1,8 @@
 import os
 import json
 
+from .storage import backup_if_unreadable
+
 CONFIG_PATH = os.path.expanduser("~/.nyxx/config.json")
 
 DEFAULTS = {
@@ -25,18 +27,19 @@ DEFAULTS = {
 
 def load_config():
     try:
-        with open(CONFIG_PATH, "r") as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
             if not isinstance(data, dict):
                 return dict(DEFAULTS)
             for key, val in DEFAULTS.items():
                 data.setdefault(key, val)
             return data
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, ValueError):  # ValueError: bad JSON or encoding
         return dict(DEFAULTS)
 
 def save_config(config):
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    backup_if_unreadable(CONFIG_PATH, dict)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
