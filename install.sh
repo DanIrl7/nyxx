@@ -6,21 +6,34 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # ── Detect Python binary ───────────────────────────────────────────────────
+# Needs 3.10+ (Pillow 12 requires it). Plain `python3` can be older — e.g.
+# the one macOS ships is 3.9 — so also look for a newer versioned binary.
 echo "Checking Python environment..."
 PYTHON_COMMAND=""
-if command -v python3 &> /dev/null; then
-    PYTHON_COMMAND="python3"
-elif command -v python &> /dev/null; then
-    PYTHON_COMMAND="python"
-else
-    echo "Error: Python 3 is not installed or not in PATH. Please install Python 3."
+for candidate in python3 python3.14 python3.13 python3.12 python3.11 python3.10 python; do
+    if command -v "$candidate" &> /dev/null &&
+       "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' &> /dev/null; then
+        PYTHON_COMMAND="$candidate"
+        break
+    fi
+done
+if [ -z "$PYTHON_COMMAND" ]; then
+    echo "Error: Nyxx needs Python 3.10 or newer, and none was found in PATH."
+    echo "       (macOS's built-in python3 is 3.9; install a newer one, e.g. 'brew install python'.)"
     exit 1
 fi
 
 # ── Create venv if missing ─────────────────────────────────────────────────
-if [ ! -d "$SCRIPT_DIR/.venv" ]; then
+# Checks for the activate script rather than the folder: a venv whose
+# creation failed partway (e.g. no python3-venv on Debian/Ubuntu) leaves
+# a .venv folder without one, which would otherwise block every rerun.
+if [ ! -f "$SCRIPT_DIR/.venv/bin/activate" ] && [ ! -f "$SCRIPT_DIR/.venv/Scripts/activate" ]; then
     echo "Creating Python virtual environment..."
-    $PYTHON_COMMAND -m venv "$SCRIPT_DIR/.venv"
+    "$PYTHON_COMMAND" -m venv --clear "$SCRIPT_DIR/.venv" || {
+        echo "Error: Failed to create the virtual environment."
+        echo "       On Debian/Ubuntu, install the venv module first: sudo apt install python3-venv"
+        exit 1
+    }
 fi
 
 # ── Resolve venv paths (Windows vs Unix) ──────────────────────────────────
@@ -113,10 +126,15 @@ function nyxx {
     \$projectRoot      = "$WIN_SCRIPT_DIR"
     \$pythonExecutable = "$WIN_PYTHON_BIN"
 
-    if (-not (Test-Path \$pythonExecutable)) {
+    if (-not (Test-Path -LiteralPath \$pythonExecutable)) {
         Write-Host "nyxx: python not found at \$pythonExecutable"
         return
     }
+
+    # Clear anything an earlier run left behind so only this run's action
+    # gets acted on below.
+    \$actionFile = Join-Path \$env:USERPROFILE ".nyxx\action"
+    Remove-Item -LiteralPath \$actionFile -ErrorAction SilentlyContinue
 
     \$oldPath        = \$env:PYTHONPATH
     \$oldCwd         = \$env:NYXX_CWD
@@ -128,12 +146,13 @@ function nyxx {
     \$env:PYTHONPATH = \$oldPath
     \$env:NYXX_CWD   = \$oldCwd
 
-    \$actionFile = "\$HOME/.nyxx/action"
-    if (Test-Path \$actionFile) {
-        \$action = (Get-Content \$actionFile -Raw).Trim()
-        Remove-Item \$actionFile
+    if (Test-Path -LiteralPath \$actionFile) {
+        # UTF8: Nyxx writes UTF-8 without a BOM, which PowerShell 5.1 would
+        # otherwise read as ANSI. -LiteralPath: [ ] in folder names.
+        \$action = (Get-Content -LiteralPath \$actionFile -Raw -Encoding UTF8).Trim()
+        Remove-Item -LiteralPath \$actionFile
         if (\$action -match "^CD:(.*)") {
-            Set-Location \$Matches[1].Trim()
+            Set-Location -LiteralPath \$Matches[1].Trim()
         } elseif (\$action -match "^EXEC:(.*)") {
             Invoke-Expression \$Matches[1].Trim()
         } else {
@@ -175,13 +194,17 @@ else
 
 # Nyxx Integration
 nyxx() {
+  local action_file="\$HOME/.nyxx/action"
+  # Clear anything an earlier run left behind so only this run's action
+  # gets acted on below.
+  rm -f "\$action_file"
+
   # NYXX_CWD tells Python which directory the user is currently in.
   # Run directly (no output capture) so jump add / memo add prompts work
   # the same as everything else; the result comes back via the action
   # file, not stdout.
   NYXX_CWD="\$(pwd)" PYTHONPATH="${SCRIPT_DIR}" "${PYTHON_BIN}" -m src.nyxx.main "\$@"
 
-  local action_file="\$HOME/.nyxx/action"
   if [[ -f "\$action_file" ]]; then
     local action
     action=\$(cat "\$action_file")

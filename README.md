@@ -21,12 +21,16 @@ Download the latest `Nyxx_Setup.exe` from the [Releases](https://github.com/DanI
 
 The installer will:
 
-- Install Nyxx to `C:\Program Files\Nyxx`
+- Install Nyxx for your account to `%LOCALAPPDATA%\Programs\Nyxx` (no admin rights needed)
 - Add `nyxx` to your PATH so it works from any terminal
 - Automatically configure your PowerShell profile with the shell wrapper
 - Optionally create a desktop shortcut
 
 After installing, open a **new** PowerShell window and type `nyxx`.
+
+> **Windows PowerShell blocks scripts by default**, which also stops it loading the profile that defines `nyxx`. When that's the case, the installer offers a checkbox, *Let Windows PowerShell run the nyxx command*, which allows local scripts for your account only (`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`). If you leave it unticked, `nyxx` still opens in Windows PowerShell but can't change your current folder; run that command yourself and reinstall to enable it later. Command Prompt and PowerShell 7 work either way.
+>
+> Upgrading from 1.1, which installed to `C:\Program Files\Nyxx`? Uninstall that version first (Settings → Apps) so you don't end up with two copies.
 
 > **Tip:** For the best visual experience use [Windows Terminal](https://aka.ms/terminal) or [Fluent Terminal](https://github.com/felixse/FluentTerminal) instead of the default PowerShell window. They support true color and render the block-character backgrounds correctly.
 

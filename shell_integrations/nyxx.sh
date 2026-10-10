@@ -11,11 +11,15 @@
 nyxx() {
     local SCRIPT_DIR="$HOME/path/to/nyxx"
     local PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
+    local action_file="$HOME/.nyxx/action"
+
+    # Clear anything an earlier run left behind so only this run's action
+    # gets acted on below.
+    rm -f "$action_file"
 
     # NYXX_CWD tells Python which directory the user is currently in.
     NYXX_CWD="$(pwd)" PYTHONPATH="$SCRIPT_DIR" "$PYTHON_BIN" -m src.nyxx.main "$@"
 
-    local action_file="$HOME/.nyxx/action"
     if [[ -f "$action_file" ]]; then
         local action
         action=$(cat "$action_file")

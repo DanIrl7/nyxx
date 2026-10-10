@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# ...except batch files, which cmd.exe needs as CRLF: with bare LF line
+# endings it can fail to find goto/call labels.
+*.bat text eol=crlf

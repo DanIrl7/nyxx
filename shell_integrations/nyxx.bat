@@ -20,9 +20,14 @@ set "NYXX_SCRIPT_DIR=C:\path\to\nyxx"
 set "NYXX_PYTHON_BIN=%NYXX_SCRIPT_DIR%\.venv\Scripts\python.exe"
 
 if not exist "%NYXX_PYTHON_BIN%" (
-    echo nyxx: python not found at %NYXX_PYTHON_BIN%
+    echo nyxx: python not found at "%NYXX_PYTHON_BIN%"
     goto :eof
 )
+
+set "NYXX_ACTION_FILE=%USERPROFILE%\.nyxx\action"
+rem Clear anything an earlier run left behind (e.g. Nyxx.exe started from
+rem the Start menu) so only this run's action gets acted on below.
+del "%NYXX_ACTION_FILE%" >nul 2>&1
 
 set "NYXX_OLD_CWD=%NYXX_CWD%"
 set "NYXX_CWD=%CD%"
@@ -36,25 +41,34 @@ set "NYXX_CWD=%NYXX_OLD_CWD%"
 set "NYXX_OLD_PYTHONPATH="
 set "NYXX_OLD_CWD="
 
-set "NYXX_ACTION_FILE=%USERPROFILE%\.nyxx\action"
-if not exist "%NYXX_ACTION_FILE%" goto :eof
+if not exist "%NYXX_ACTION_FILE%" goto :cleanup
 
+rem Nyxx writes the action file as UTF-8. Read it under code page 65001
+rem so non-ASCII paths come through intact, then put the old one back.
+set "NYXX_OLD_CP="
+for /f "tokens=2 delims=:." %%c in ('chcp') do set "NYXX_OLD_CP=%%c"
+if defined NYXX_OLD_CP chcp 65001 >nul
 set "NYXX_ACTION="
 set /p NYXX_ACTION=<"%NYXX_ACTION_FILE%"
+if defined NYXX_OLD_CP chcp %NYXX_OLD_CP% >nul
 del "%NYXX_ACTION_FILE%" >nul 2>&1
 
-if "%NYXX_ACTION:~0,3%"=="CD:" (
-    cd /d "%NYXX_ACTION:~3%" 2>nul || echo nyxx: cd failed: %NYXX_ACTION:~3%
-    goto :cleanup
-)
+rem Dispatch with goto rather than inside ( ... ) blocks: cmd expands
+rem %NYXX_ACTION% before it parses a block, so a ")" in the path or
+rem command (e.g. "C:\Program Files (x86)") would end the block early.
+if "%NYXX_ACTION:~0,3%"=="CD:" goto :nyxx_cd
+if "%NYXX_ACTION:~0,5%"=="EXEC:" goto :nyxx_exec
+echo nyxx: unexpected action: "%NYXX_ACTION%"
+goto :cleanup
 
-if "%NYXX_ACTION:~0,5%"=="EXEC:" (
-    call %NYXX_ACTION:~5%
-    goto :cleanup
-)
+:nyxx_cd
+cd /d "%NYXX_ACTION:~3%" 2>nul || echo nyxx: cd failed: "%NYXX_ACTION:~3%"
+goto :cleanup
 
-echo nyxx: unexpected action: %NYXX_ACTION%
+:nyxx_exec
+call %NYXX_ACTION:~5%
 
 :cleanup
 set "NYXX_ACTION="
 set "NYXX_ACTION_FILE="
+set "NYXX_OLD_CP="
