@@ -11,7 +11,7 @@
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{2BD385C9-B54B-4973-AF5E-2BB9E1F3B355}
 AppName=Nyxx
-AppVersion=1.1
+AppVersion=1.2
 AppPublisher=Danirl7
 AppPublisherURL=https://github.com/DanIrl7/nyxx
 AppSupportURL=https://github.com/DanIrl7/nyxx
@@ -22,7 +22,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 OutputDir=..\dist
-OutputBaseFilename=Nyxx_Setup_1.1
+OutputBaseFilename=Nyxx_Setup_1.2
 SetupIconFile=..\assets\icon.ico
 SolidCompression=yes
 WizardStyle=classic zircon

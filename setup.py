@@ -7,7 +7,7 @@ import setuptools
 
 setuptools.setup(
     name="nyxx",
-    version="1.0",
+    version="1.2",
     description="Nyxx makes navigating the terminal easier and more intuitive. With the nyxx command and the arrow keys, you can navigate to any file or directory in you system in a few seconds, save your most used paths, and more.",
     author="Daniel Masona",
     author_email="danielmasona7@gmail.com",
