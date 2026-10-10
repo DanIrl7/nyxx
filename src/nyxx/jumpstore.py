@@ -32,6 +32,18 @@ def find_jump(name):
             return j
     return None
 
+def normalize_jump_path(path):
+    """How a path typed for a new jump gets stored. Blank means the current
+    directory. A relative path is made absolute, since otherwise it would
+    resolve against wherever the jump is later used from. "~/..." is kept
+    as typed: it's expanded when the jump is used, so it stays valid in a
+    jumps.json copied to another machine or user account."""
+    if not path:
+        return os.getcwd()
+    if path.startswith("~"):
+        return path
+    return os.path.abspath(path)
+
 def add_jump(name, desc, path):
     """Add or overwrite a jump. Returns (success, error_message)."""
     if not name:

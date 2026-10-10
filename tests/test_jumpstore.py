@@ -55,6 +55,19 @@ class TestJumpstore:
         assert ok is False
         assert "nope" in err
 
+    def test_typed_home_path_is_kept_as_typed(self):
+        """'~' paths are expanded on use, so a copied jumps.json still works
+        under a different user name"""
+        assert jumpstore.normalize_jump_path("~/projects") == "~/projects"
+
+    def test_typed_relative_path_is_made_absolute(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert jumpstore.normalize_jump_path("projects") == os.path.join(os.getcwd(), "projects")
+
+    def test_blank_path_means_current_directory(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert jumpstore.normalize_jump_path("") == os.getcwd()
+
     def test_add_jump_rejects_empty_name(self, tmp_path):
         self._use_tmp_path(tmp_path)
         ok, err = jumpstore.add_jump("", "desc", "/path")

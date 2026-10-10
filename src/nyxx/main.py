@@ -7,7 +7,7 @@ import logging
 from .ui import UIEngine
 from .navigator import Navigator
 from .background import BackgroundEngine, SCENE_THEMES
-from .jumpstore import list_jumps, add_jump
+from .jumpstore import list_jumps, add_jump, normalize_jump_path
 from .memostore import list_memos, add_memo
 from .config import get as config_get
 from .app_state import AppState
@@ -216,10 +216,7 @@ def run_cli():
         if args.subcommand == "jump":
             name = input("Jump name: ").strip()
             desc = input("Description: ").strip()
-            path = input("Path (leave blank for current dir): ").strip()
-            # Store it absolute: a relative path would otherwise be resolved
-            # against wherever the jump happens to be used from.
-            path = os.path.abspath(os.path.expanduser(path)) if path else os.getcwd()
+            path = normalize_jump_path(input("Path (leave blank for current dir): ").strip())
             success, err = add_jump(name, desc, path)
             print(f"Jump '{name}' saved." if success else f"Error: {err}")
         elif args.subcommand == "memo":
